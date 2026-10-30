@@ -3155,6 +3155,33 @@
     instalment: 1, count: 1, typical_charge: 1, paid: 1, sort_order: 1
   };
 
+  /* Whose clock decides when something happened.
+
+     A browser reports whatever its device believes, and a device can be wrong:
+     this shop's own laptop was running nearly six hours fast, which filed an
+     evening's trading under tomorrow's date. The database has one clock, it is
+     correct, and every column below already defaults to it — so the app simply
+     does not send a time and lets the server stamp it. Nothing an attendant's
+     phone believes can move a sale to the wrong day again. */
+  var SERVER_STAMPS = {
+    sales:     ["ts"],
+    jobs:      ["ts"],
+    deals:     ["ts"],
+    payments:  ["ts"],
+    customers: ["first_seen"]
+  };
+
+  function serverStamped(kind, row) {
+    var drop = SERVER_STAMPS[kind];
+    if (!drop) return row;
+    var out = {};
+    for (var k in row) {
+      if (!Object.prototype.hasOwnProperty.call(row, k)) continue;
+      if (drop.indexOf(k) === -1) out[k] = row[k];
+    }
+    return out;
+  }
+
   function toRow(kind, obj) {
     var map = FIELDS[kind] || {};
     var out = {};
@@ -3221,7 +3248,8 @@
           };
         },
         add: function (data) {
-          return sb.from(t.base).insert(toRow(kind, data)).select("id").single()
+          return sb.from(t.base).insert(serverStamped(kind, toRow(kind, data)))
+            .select("id").single()
             .then(function (r) {
               if (r.error) throw r.error;
               return refresh(kind).then(function () { return { id: r.data.id }; });
