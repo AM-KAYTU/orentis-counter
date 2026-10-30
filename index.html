@@ -419,6 +419,7 @@
       <button role="tab" aria-selected="false" data-view="repairs">Repairs</button>
       <button role="tab" aria-selected="false" data-view="owed">Owed<span class="dot" id="owedCount" hidden>0</span></button>
       <button role="tab" aria-selected="false" data-view="people">People</button>
+      <button role="tab" aria-selected="false" data-view="reports" id="tabReports" hidden>Reports</button>
       <button role="tab" aria-selected="false" data-view="money" id="tabMoney" hidden>Money</button>
       <button role="tab" aria-selected="false" data-view="stock" id="tabStock" hidden>Stock</button>
     </nav>
@@ -476,6 +477,34 @@
       <input class="search" id="peopleSearch" type="search" placeholder="Search by name or number&hellip;" autocomplete="off" aria-label="Search customers">
       <div id="peopleList"></div>
       <p class="note">Numbers are saved when a sale or repair is recorded. Tap a number to copy it.</p>
+    </section>
+
+    <section id="view-reports" hidden>
+      <dl class="strip" id="reportStrip"></dl>
+      <div class="seg period" id="reportSeg">
+        <button type="button" data-report="ledger" aria-pressed="true">Every transaction</button>
+        <button type="button" data-report="days" aria-pressed="false">By day</button>
+        <button type="button" data-report="kinds" aria-pressed="false">By kind</button>
+      </div>
+      <div class="bar">
+        <button class="mini" id="ledgerCsvBtn">Download this report</button>
+      </div>
+      <div id="report-ledger">
+        <h2>Every transaction</h2>
+        <p class="note">Each movement of money, newest first — a sale paid at the
+          counter, a deposit, a hire purchase instalment, a repair, a running cost,
+          a payment to the supplier. The date is when the money moved, not when the
+          sale was first written down.</p>
+        <div id="ledgerList"></div>
+      </div>
+      <div id="report-days" hidden>
+        <h2>Day by day</h2>
+        <div id="dayList"></div>
+      </div>
+      <div id="report-kinds" hidden>
+        <h2>Where it came from and went</h2>
+        <div id="kindList"></div>
+      </div>
     </section>
 
     <section id="view-money" hidden>
@@ -692,60 +721,214 @@
     return a.concat(b);
   }
 
+  /* ---------- the ledger ----------
+     Every movement of money, from whichever record holds it. One list, so a
+     hire purchase instalment is as findable as a sale.
+
+     The care here is not double counting. A sale paid at the counter holds its
+     own money in `received` and has no payment row. A sale on credit records
+     its deposit as a payment row, so the sale line itself moves nothing. Deal
+     down payments are payment rows too. And a payment against a supplier
+     tranche is money leaving, not arriving. */
+
+  var LEDGER_KINDS = {
+    sale:      { label: "Sale", cls: "cash" },
+    credit:    { label: "Sale on credit", cls: "credit" },
+    repair:    { label: "Repair", cls: "cash" },
+    repaircr:  { label: "Repair on credit", cls: "credit" },
+    deal:      { label: "Hire purchase started", cls: "credit" },
+    paysale:   { label: "Payment on a sale", cls: "cash" },
+    payjob:    { label: "Payment on a repair", cls: "cash" },
+    paydeal:   { label: "Hire purchase instalment", cls: "cash" },
+    payother:  { label: "Payment received", cls: "cash" },
+    parts:     { label: "Parts bought", cls: "out" },
+    phone:     { label: "Phone bought for a deal", cls: "out" },
+    expense:   { label: "Running cost", cls: "out" },
+    supplier:  { label: "Paid the supplier", cls: "out" }
+  };
+
+  function costById() {
+    var m = {};
+    stock.forEach(function (it) { m[it.id] = num(it.cost); });
+    return m;
+  }
+
+  function nameForRef(refType, refId) {
+    if (refType === "sale") {
+      var s = sales.filter(function (x) { return x.id === refId; })[0];
+      return s ? s.name : "a sale";
+    }
+    if (refType === "job") {
+      var j = jobs.filter(function (x) { return x.id === refId; })[0];
+      return j ? (j.device || j.service) : "a repair";
+    }
+    if (refType === "deal") {
+      var d = deals.filter(function (x) { return x.id === refId; })[0];
+      return d ? (d.device || "a phone") : "a phone";
+    }
+    if (refType === "tranche") {
+      var t = tranches.filter(function (x) { return x.id === refId; })[0];
+      return t ? (t.label || "the supplier") : "the supplier";
+    }
+    return "";
+  }
+
+  function ledgerAll() {
+    var rows = [];
+    var costs = costById();
+
+    sales.forEach(function (s) {
+      var tot = num(s.total), rec = num(s.received);
+      var onCredit = tot - rec > 0.5 || s.payment === "credit";
+      var cost = (costs[s.itemId] || 0) * num(s.qty);
+      rows.push({
+        ts: s.ts, kind: onCredit ? "credit" : "sale",
+        title: (s.name || "Goods") + " \u00d7 " + num(s.qty),
+        who: s.buyer || "", value: tot, cost: cost,
+        inAmt: onCredit ? 0 : rec, outAmt: 0,
+        note: onCredit ? "Owing " + cedi(Math.max(0, tot - rec)) : "",
+        ref: "sale", refId: s.id
+      });
+    });
+
+    jobs.forEach(function (j) {
+      var ch = num(j.charge), rec = num(j.received);
+      var onCredit = ch - rec > 0.5 || j.payment === "credit";
+      rows.push({
+        ts: j.ts, kind: onCredit ? "repaircr" : "repair",
+        title: j.device || j.service || "Repair",
+        who: j.buyer || "", value: ch, cost: num(j.partsCost),
+        inAmt: onCredit ? 0 : rec, outAmt: 0,
+        note: onCredit ? "Owing " + cedi(Math.max(0, ch - rec)) : "",
+        ref: "job", refId: j.id
+      });
+      if (num(j.partsCost) > 0) {
+        rows.push({
+          ts: j.ts, kind: "parts", title: "Parts for " + (j.device || j.service || "a repair"),
+          who: "", value: 0, cost: 0, inAmt: 0, outAmt: num(j.partsCost),
+          note: "", ref: "job", refId: j.id
+        });
+      }
+    });
+
+    deals.forEach(function (d) {
+      rows.push({
+        ts: d.ts, kind: "deal", title: d.device || "Phone",
+        who: d.buyer || "", value: num(d.price), cost: num(d.cost),
+        inAmt: 0, outAmt: 0,
+        note: "Over " + num(d.count) + " payments",
+        ref: "deal", refId: d.id
+      });
+      if (num(d.cost) > 0) {
+        rows.push({
+          ts: d.ts, kind: "phone", title: (d.device || "Phone") + " bought in",
+          who: "", value: 0, cost: 0, inAmt: 0, outAmt: num(d.cost),
+          note: "", ref: "deal", refId: d.id
+        });
+      }
+    });
+
+    payments.forEach(function (p) {
+      var amt = num(p.amount);
+      if (amt <= 0) return;
+      var what = nameForRef(p.refType, p.refId);
+      if (p.refType === "tranche") {
+        rows.push({
+          ts: p.ts, kind: "supplier", title: what || "The supplier",
+          who: "", value: 0, cost: 0, inAmt: 0, outAmt: amt, note: "",
+          ref: "tranche", refId: p.refId
+        });
+        return;
+      }
+      var kind = p.refType === "sale" ? "paysale"
+               : p.refType === "job" ? "payjob"
+               : p.refType === "deal" ? "paydeal" : "payother";
+      rows.push({
+        ts: p.ts, kind: kind, title: what || "Payment",
+        who: p.who || "", value: 0, cost: 0, inAmt: amt, outAmt: 0, note: "",
+        ref: p.refType, refId: p.refId
+      });
+    });
+
+    expenses.forEach(function (x) {
+      rows.push({
+        ts: x.ts, kind: "expense", title: x.what || "Running cost",
+        who: "", value: 0, cost: 0, inAmt: 0, outAmt: num(x.amount), note: "",
+        ref: "expense", refId: x.id
+      });
+    });
+
+    return rows.sort(function (a, b) {
+      return String(b.ts).localeCompare(String(a.ts));
+    });
+  }
+
+  function ledgerRows() {
+    return ledgerAll().filter(function (r) { return inPeriod(r.ts); });
+  }
+
+  function ledgerTotals(rows) {
+    var t = { inAmt: 0, outAmt: 0, sold: 0, repaired: 0, credited: 0, margin: 0 };
+    rows.forEach(function (r) {
+      t.inAmt += r.inAmt; t.outAmt += r.outAmt;
+      if (r.kind === "sale" || r.kind === "credit") {
+        t.sold += r.value; t.margin += r.value - r.cost;
+      }
+      if (r.kind === "repair" || r.kind === "repaircr") {
+        t.repaired += r.value; t.margin += r.value - r.cost;
+      }
+      if (r.kind === "deal") t.margin += r.value - r.cost;
+      if (r.kind === "credit" || r.kind === "repaircr") {
+        t.credited += Math.max(0, r.value - (r.inAmt || 0));
+      }
+    });
+    t.net = t.inAmt - t.outAmt;
+    return t;
+  }
+
   /* ---------- rendering ---------- */
 
   function renderStrip() {
-    var cash = 0, credit = 0, units = 0, profit = 0;
-    var costById = {};
-    stock.forEach(function (it) { costById[it.id] = Number(it.cost) || 0; });
+    /* Money in and out come from the ledger, which counts a payment on the day
+       it was taken. Counting each sale's `received` against the sale's own date
+       quietly backdated every later payment, so a hire purchase instalment
+       never showed up on the day it was actually collected. */
+    var led = ledgerTotals(ledgerRows());
+
+    var units = 0, credit = 0, jn = 0, jcr = 0, jCharged = 0, jEarned = 0;
     sales.forEach(function (s) {
       if (!inPeriod(s.ts)) return;
-      var tot = Number(s.total) || 0, rec = Number(s.received) || 0;
-      cash += rec;
-      credit += Math.max(0, tot - rec);
       units += Number(s.qty) || 0;
-      profit += tot - (costById[s.itemId] || 0) * (Number(s.qty) || 0);
+      credit += Math.max(0, num(s.total) - num(s.received));
     });
-    var jc = 0, jcr = 0, jn = 0, jp = 0;
     jobs.forEach(function (j) {
       if (!inPeriod(j.ts)) return;
-      var ch = Number(j.charge) || 0, rec = Number(j.received) || 0;
-      jc += rec;
-      jcr += Math.max(0, ch - rec);
       jn += 1;
-      jp += ch - (Number(j.partsCost) || 0);
+      jCharged += num(j.charge);
+      jcr += Math.max(0, num(j.charge) - num(j.received));
+      jEarned += num(j.charge) - num(j.partsCost);
+    });
+    // Repair money taken in this period, counted on the day it arrived.
+    var jCashIn = 0;
+    ledgerRows().forEach(function (r) {
+      if (r.kind === "repair" || r.kind === "payjob") jCashIn += r.inAmt;
     });
 
-    // Money that left the shop inside the chosen period.
-    var outflow = 0;
-    jobs.forEach(function (j) {
-      if (inPeriod(j.ts)) outflow += num(j.partsCost);
-    });
-    expenses.forEach(function (x) {
-      if (inPeriod(x.ts)) outflow += num(x.amount);
-    });
-    payments.forEach(function (p) {
-      if (p.refType === "tranche" && inPeriod(p.ts)) outflow += num(p.amount);
-    });
-    deals.forEach(function (d) {
-      if (inPeriod(d.ts)) outflow += num(d.cost);
-    });
-
-    var cells = [["Cash in", cedi(cash + jc)],
-                 ["Cash out", cedi(outflow)],
+    var cells = [["Cash in", cedi(led.inAmt)],
+                 ["Cash out", cedi(led.outAmt)],
                  ["Unpaid", cedi(credit + jcr)],
                  ["Units sold", String(units)],
                  ["Repairs", String(jn)]];
-    if (isOwner) cells.push(["Profit", cedi(profit + jp)]);
+    if (isOwner) cells.push(["Profit", cedi(led.margin)]);
     $("strip").innerHTML = cells.map(function (c) {
       return "<div><dt>" + esc(c[0]) + '</dt><dd class="num">' + esc(c[1]) + "</dd></div>";
     }).join("");
 
     var rcells = [["Repairs", String(jn)],
-                  ["Charged", cedi(jc + jcr)],
-                  ["Cash in", cedi(jc)],
+                  ["Charged", cedi(jCharged)],
+                  ["Cash in", cedi(jCashIn)],
                   ["Unpaid", cedi(jcr)]];
-    if (isOwner) rcells.push(["Earned", cedi(jp)]);
+    if (isOwner) rcells.push(["Earned", cedi(jEarned)]);
     $("repairStrip").innerHTML = rcells.map(function (c) {
       return "<div><dt>" + esc(c[0]) + '</dt><dd class="num">' + esc(c[1]) + "</dd></div>";
     }).join("");
@@ -823,6 +1006,113 @@
         '<div class="amt num">' + cedi(tot) + "</div>" +
         (canWrite !== false && today ? '<button class="mini" data-undo="' + esc(s.id) + '">Undo</button>' : "") +
         "</div>";
+    }).join("");
+  }
+
+  var reportView = "ledger";
+
+  function renderReports() {
+    var rows = ledgerRows();
+    var t = ledgerTotals(rows);
+
+    var cells = [["Money in", cedi(t.inAmt)],
+                 ["Money out", cedi(t.outAmt)],
+                 ["Net", (t.net < 0 ? "-" : "") + cedi(Math.abs(t.net))],
+                 ["Goods sold", cedi(t.sold)],
+                 ["Repairs", cedi(t.repaired)],
+                 ["New credit given", cedi(t.credited)]];
+    if (isOwner) cells.push(["Margin earned", cedi(t.margin)]);
+    $("reportStrip").innerHTML = cells.map(function (c) {
+      return "<div><dt>" + esc(c[0]) + '</dt><dd class="num">' + esc(c[1]) + "</dd></div>";
+    }).join("");
+
+    if (reportView === "ledger") renderLedgerList(rows);
+    if (reportView === "days") renderDayList(rows);
+    if (reportView === "kinds") renderKindList(rows);
+  }
+
+  function renderLedgerList(rows) {
+    var el = $("ledgerList");
+    if (!rows.length) {
+      el.innerHTML = '<div class="empty"><strong>Nothing moved in this period</strong>' +
+        "No money came in or went out " + esc(periodLabel()) + ".</div>";
+      return;
+    }
+    el.innerHTML = rows.map(function (r) {
+      var k = LEDGER_KINDS[r.kind] || { label: r.kind, cls: "cash" };
+      var amount = r.inAmt > 0 ? "+" + cedi(r.inAmt)
+                 : r.outAmt > 0 ? "-" + cedi(r.outAmt)
+                 : cedi(r.value);
+      var bits = [];
+      if (r.who) bits.push(esc(r.who));
+      if (r.note) bits.push(esc(r.note));
+      if (isOwner && r.cost > 0 && (r.kind === "sale" || r.kind === "credit" ||
+          r.kind === "repair" || r.kind === "repaircr" || r.kind === "deal")) {
+        bits.push("cost " + cedi(r.cost) + " · margin " + cedi(r.value - r.cost));
+      }
+      return '<div class="row"><div class="main">' +
+        '<div class="nm">' + esc(r.title) +
+          '<span class="pill ' + k.cls + '">' + esc(k.label) + "</span></div>" +
+        '<div class="sub num">' + stampOf(r.ts) +
+          (bits.length ? " · " + bits.join(" · ") : "") + "</div></div>" +
+        '<div class="amt num">' + amount + "</div></div>";
+    }).join("");
+  }
+
+  function renderDayList(rows) {
+    var byDay = {};
+    rows.forEach(function (r) {
+      var d = ymdOf(r.ts);
+      if (!byDay[d]) byDay[d] = { inAmt: 0, outAmt: 0, n: 0 };
+      byDay[d].inAmt += r.inAmt;
+      byDay[d].outAmt += r.outAmt;
+      if (r.inAmt > 0 || r.outAmt > 0) byDay[d].n += 1;
+    });
+    var days = Object.keys(byDay).sort().reverse();
+    var el = $("dayList");
+    if (!days.length) {
+      el.innerHTML = '<div class="empty"><strong>No days to show</strong>' +
+        "Nothing moved " + esc(periodLabel()) + ".</div>";
+      return;
+    }
+    el.innerHTML = days.map(function (d) {
+      var v = byDay[d];
+      var net = v.inAmt - v.outAmt;
+      return '<div class="row"><div class="main">' +
+        '<div class="nm">' + esc(d) + "</div>" +
+        '<div class="sub num">' + v.n + (v.n === 1 ? " movement" : " movements") +
+          " · in " + cedi(v.inAmt) + " · out " + cedi(v.outAmt) + "</div></div>" +
+        '<div class="amt num">' + (net < 0 ? "-" : "") + cedi(Math.abs(net)) + "</div></div>";
+    }).join("");
+  }
+
+  function renderKindList(rows) {
+    var byKind = {};
+    rows.forEach(function (r) {
+      if (!byKind[r.kind]) byKind[r.kind] = { inAmt: 0, outAmt: 0, n: 0 };
+      byKind[r.kind].inAmt += r.inAmt;
+      byKind[r.kind].outAmt += r.outAmt;
+      byKind[r.kind].n += 1;
+    });
+    var keys = Object.keys(byKind).sort(function (a, b) {
+      var A = byKind[a], B = byKind[b];
+      return (B.inAmt + B.outAmt) - (A.inAmt + A.outAmt);
+    });
+    var el = $("kindList");
+    if (!keys.length) {
+      el.innerHTML = '<div class="empty"><strong>Nothing to group</strong>' +
+        "No transactions " + esc(periodLabel()) + ".</div>";
+      return;
+    }
+    el.innerHTML = keys.map(function (k) {
+      var v = byKind[k];
+      var label = (LEDGER_KINDS[k] || { label: k }).label;
+      var amount = v.outAmt > v.inAmt ? "-" + cedi(v.outAmt) : "+" + cedi(v.inAmt);
+      if (v.inAmt === 0 && v.outAmt === 0) amount = "\u2014";
+      return '<div class="row"><div class="main">' +
+        '<div class="nm">' + esc(label) + "</div>" +
+        '<div class="sub num">' + v.n + (v.n === 1 ? " record" : " records") + "</div></div>" +
+        '<div class="amt num">' + amount + "</div></div>";
     }).join("");
   }
 
@@ -1384,6 +1674,7 @@
     renderOwedBadge();
     if (view === "owed") { renderOwedStrip(); renderOwedList(); }
     if (view === "people") renderPeople();
+    if (view === "reports") renderReports();
     if (view === "money") renderMoney();
     if (view === "stock") { renderStockSummary(); renderStock(); renderServices(); }
   }
@@ -2285,7 +2576,7 @@
     Array.prototype.forEach.call($("tabs").children, function (x) {
       x.setAttribute("aria-selected", x === b ? "true" : "false");
     });
-    ["sell", "today", "repairs", "owed", "people", "money", "stock"].forEach(function (v) {
+    ["sell", "today", "repairs", "owed", "people", "reports", "money", "stock"].forEach(function (v) {
       $("view-" + v).hidden = v !== view;
     });
     renderAll();
@@ -2684,6 +2975,77 @@
     } catch (e) { toast("Could not save the CSV"); }
   });
 
+  /* The report as a spreadsheet. Works whether the page was given a download
+     capability or has to make its own file. */
+  function saveCsv(filename, text) {
+    if (typeof dl !== "undefined" && dl && dl.save) {
+      return dl.save({ filename: filename, data: text })
+        .then(function () { toast("Saved " + filename); })
+        .catch(function (e) {
+          if (!e || e.code !== "declined") toast("Could not save the file");
+        });
+    }
+    try {
+      var blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+      toast("Saved " + filename);
+    } catch (e) {
+      toast("Could not save the file");
+    }
+    return Promise.resolve();
+  }
+
+  function buildLedgerCsv() {
+    var head = ["Date", "Time", "What", "Type", "Who", "Money in", "Money out",
+                "Value", "Note"];
+    if (isOwner) head.push("Cost", "Margin");
+    var rows = ledgerRows().slice().reverse();   // oldest first reads better
+    var lines = [head];
+    rows.forEach(function (r) {
+      var t = shopTime(new Date(r.ts));
+      var cells = [
+        ymdOf(r.ts),
+        isNaN(t) ? "" : pad2(t.getUTCHours()) + ":" + pad2(t.getUTCMinutes()),
+        r.title, (LEDGER_KINDS[r.kind] || { label: r.kind }).label,
+        r.who || "", r.inAmt || 0, r.outAmt || 0, r.value || 0, r.note || ""
+      ];
+      if (isOwner) cells.push(r.cost || 0, (r.value || 0) - (r.cost || 0));
+      lines.push(cells);
+    });
+    var t = ledgerTotals(ledgerRows());
+    lines.push([]);
+    lines.push(["Totals for " + periodLabel(), "", "", "", "", t.inAmt, t.outAmt, t.sold, "net " + t.net]);
+    return lines.map(function (cells) {
+      return cells.map(function (c) {
+        var v = String(c === undefined || c === null ? "" : c);
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      }).join(",");
+    }).join("\n");
+  }
+
+  $("ledgerCsvBtn").addEventListener("click", function () {
+    if (!ledgerRows().length) { toast("Nothing to export for this period"); return; }
+    saveCsv("shop-report-" + periodRange().from + "-to-" + periodRange().to + ".csv",
+            buildLedgerCsv());
+  });
+
+  $("reportSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-report]");
+    if (!b) return;
+    reportView = b.dataset.report;
+    Array.prototype.forEach.call($("reportSeg").children, function (x) {
+      x.setAttribute("aria-pressed", x === b ? "true" : "false");
+    });
+    ["ledger", "days", "kinds"].forEach(function (v) {
+      $("report-" + v).hidden = v !== reportView;
+    });
+    renderReports();
+  });
+
   function savePeriod() {
     try { localStorage.setItem("counter.period", JSON.stringify(period)); }
     catch (e) { /* remembering the filter is optional */ }
@@ -2956,6 +3318,7 @@
         $("signOut").hidden = false;
         $("tabStock").hidden = !isOwner;
         $("tabMoney").hidden = !isOwner;
+        $("tabReports").hidden = !isOwner;
         // A hire purchase records what the phone cost, which is the owner's
         // figure, and the deals table is closed to the counter. Hide the button
         // rather than let it fail.
