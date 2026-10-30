@@ -346,6 +346,19 @@ revoke all on function public.set_item_floor(text, numeric) from anon;
 grant execute on function public.record_deal_payment(uuid, numeric) to authenticated;
 grant execute on function public.set_item_floor(text, numeric) to authenticated;
 
+-- --------------------------------------------------------- the one clock
+-- A browser cannot read the Date response header across origins, and a device
+-- can be hours wrong: this shop's laptop was four hours out, which filed an
+-- evening's trading under the next day. The app asks here instead.
+
+create or replace function public.server_now()
+  returns timestamptz language sql stable as $$
+  select now();
+$$;
+
+revoke all on function public.server_now() from public;
+grant execute on function public.server_now() to anon, authenticated;
+
 -- ---------------------------------------------------------------- grants
 
 grant usage on schema public to authenticated;

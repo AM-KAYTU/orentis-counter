@@ -3343,23 +3343,18 @@
   }
 
   /* Ask the server what time it is. Every HTTP response carries the server's
-     own Date header, so this costs one tiny request and needs no schema. If the
-     device is off by more than a couple of minutes, the gap is recorded and
-     every "today" in the app is measured from the corrected clock instead. */
+     answer comes back as data, because a browser is not allowed to read the
+     Date response header across origins -- it is not on the CORS safelist, so
+     reading it returns null and a wrong clock stays wrong. If the device is off
+     by more than a couple of minutes the gap is recorded and every "today" in
+     the app is measured from the corrected clock instead. */
   function syncClock() {
     var started = Date.now();
-    // read the config here rather than closing over the boot function's copy
-    var conf = window.SHOP_CONFIG || {};
-    if (!conf.url) return Promise.resolve();
-    return fetch(conf.url + "/rest/v1/", {
-      method: "HEAD",
-      headers: { apikey: conf.anonKey }
-    }).then(function (res) {
-      var header = res.headers.get("date");
-      if (!header) return;
-      var serverMs = Date.parse(header);
+    return sb.rpc("server_now").then(function (res) {
+      if (res.error || !res.data) return;
+      var serverMs = Date.parse(res.data);
       if (isNaN(serverMs)) return;
-      // the header was written somewhere inside the round trip
+      // the reading was taken somewhere inside the round trip
       var midpoint = started + (Date.now() - started) / 2;
       clockSkewMs = serverMs - midpoint;
       if (Math.abs(clockSkewMs) > 120000) {
