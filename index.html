@@ -429,6 +429,7 @@
     <section id="view-sell">
       <dl class="strip" id="strip"></dl>
       <div id="loadNote" hidden></div>
+      <div id="clockNote" hidden></div>
       <div id="priceWarn" hidden></div>
       <button class="act repair-cta" id="repairCta" type="button">Record a repair job</button>
       <h2>Tap an item to sell</h2>
@@ -593,6 +594,14 @@
      number if the shop ever keeps time somewhere else. */
   var SHOP_OFFSET_MIN = 0;
 
+  /* The device's own clock is not evidence. This shop's laptop was six hours
+     fast, which is enough to hide a day's takings behind the wrong date. Where
+     a server is available it reports the true time at startup and the gap is
+     recorded here, so "now" means now even on a device set wrongly. */
+  var clockSkewMs = 0;
+  function nowMs() { return Date.now() + clockSkewMs; }
+  function rightNow() { return new Date(nowMs()); }
+
   function shopTime(d) {
     return new Date(d.getTime() + SHOP_OFFSET_MIN * 60000);
   }
@@ -605,7 +614,7 @@
     return new Date(Date.UTC(y, m, day) - SHOP_OFFSET_MIN * 60000);
   }
   function shopTodayParts() {
-    var t = shopTime(new Date());
+    var t = shopTime(rightNow());
     return { y: t.getUTCFullYear(), m: t.getUTCMonth(), d: t.getUTCDate() };
   }
   /* The shop day a record belongs to. Date-only strings are already days, so
@@ -653,7 +662,7 @@
   }
 
   function dayKey(d) {
-    var x = d ? new Date(d) : new Date();
+    var x = d ? new Date(d) : rightNow();
     if (isNaN(x)) return "";
     return ymd(x);
   }
@@ -1841,7 +1850,7 @@
     saveBtn.onclick = function () {
       var total = qty() * price();
       var rec = {
-        ts: new Date().toISOString(),
+        ts: rightNow().toISOString(),
         itemId: item.id,
         name: item.name,
         qty: qty(),
@@ -1992,7 +2001,7 @@
     saveBtn.onclick = function () {
       var ch = charge();
       var rec = {
-        ts: new Date().toISOString(),
+        ts: rightNow().toISOString(),
         service: svIn.value.trim(),
         charge: ch,
         partsCost: parts(),
@@ -2091,7 +2100,7 @@
     }
     return db.collection("customers").add({
       name: name, phone: phone, phoneKey: key, note: "",
-      firstSeen: ymd(new Date())
+      firstSeen: ymd(rightNow())
     }).then(function (ref) { return (ref && ref.id) || ""; })
       .catch(function () { return ""; });
   }
@@ -2143,7 +2152,7 @@
   function dealSchedule(d) {
     var out = [];
     var count = Math.max(0, Math.floor(num(d.count)));
-    var today = ymd(new Date());
+    var today = ymd(rightNow());
     for (var i = 0; i < count; i++) {
       var due = addInterval(d.startDate, i, d.interval || "month");
       out.push({ n: i + 1, due: due, amount: num(d.instalment), past: !!due && due <= today });
@@ -2203,7 +2212,7 @@
   function logPayment(refType, refId, who, amount) {
     if (!db || !(amount > 0)) return Promise.resolve();
     return db.collection("payments").add({
-      ts: new Date().toISOString(),
+      ts: rightNow().toISOString(),
       refType: refType, refId: refId,
       who: who || "", amount: amount
     }).catch(function () { /* the balance is already correct; the log is a convenience */ });
@@ -2263,7 +2272,7 @@
     var buyerIn = $("d-buyer"), saveBtn = $("d-save"), flagEl = $("d-flag");
 
     // default the first instalment to a month from today
-    var t = new Date();
+    var t = rightNow();
     $("d-start").value = addInterval(ymd(t), 1, "month");
 
     function price() { return Math.max(0, Number($("d-price").value) || 0); }
@@ -2296,7 +2305,7 @@
       $("d-week").setAttribute("aria-pressed", iv === "week" ? "true" : "false");
       $("d-fort").setAttribute("aria-pressed", iv === "fortnight" ? "true" : "false");
       $("d-month").setAttribute("aria-pressed", iv === "month" ? "true" : "false");
-      $("d-start").value = addInterval(ymd(new Date()), 1, iv);
+      $("d-start").value = addInterval(ymd(rightNow()), 1, iv);
       sync();
     }
     $("d-week").onclick = function () { setInterval_("week"); };
@@ -2313,7 +2322,7 @@
     saveBtn.onclick = function () {
       var owing = Math.max(0, price() - down());
       var rec = {
-        ts: new Date().toISOString(),
+        ts: rightNow().toISOString(),
         device: $("d-device").value.trim(),
         buyer: buyerIn.value.trim(),
         phone: $("d-phone").value.trim(),
@@ -2916,7 +2925,7 @@
         "</div></div></div>";
     document.body.appendChild(scrim);
     sheetEl = scrim;
-    $("ex-date").value = ymd(new Date());
+    $("ex-date").value = ymd(rightNow());
 
     function sync() {
       $("ex-save").disabled = !$("ex-what").value.trim() ||
@@ -2937,7 +2946,7 @@
       if (!db) { toast("Not connected"); closeSheet(); return; }
       db.collection("expenses").add({
         what: what, amount: amount,
-        ts: $("ex-date").value || ymd(new Date())
+        ts: $("ex-date").value || ymd(rightNow())
       }).then(function () {
         closeSheet(); toast(what + " recorded");
       }).catch(function () {
@@ -3333,6 +3342,37 @@
     $("g-flag").innerHTML = '<div class="flag">' + esc(msg) + "</div>";
   }
 
+  /* Ask the server what time it is. Every HTTP response carries the server's
+     own Date header, so this costs one tiny request and needs no schema. If the
+     device is off by more than a couple of minutes, the gap is recorded and
+     every "today" in the app is measured from the corrected clock instead. */
+  function syncClock() {
+    var started = Date.now();
+    // read the config here rather than closing over the boot function's copy
+    var conf = window.SHOP_CONFIG || {};
+    if (!conf.url) return Promise.resolve();
+    return fetch(conf.url + "/rest/v1/", {
+      method: "HEAD",
+      headers: { apikey: conf.anonKey }
+    }).then(function (res) {
+      var header = res.headers.get("date");
+      if (!header) return;
+      var serverMs = Date.parse(header);
+      if (isNaN(serverMs)) return;
+      // the header was written somewhere inside the round trip
+      var midpoint = started + (Date.now() - started) / 2;
+      clockSkewMs = serverMs - midpoint;
+      if (Math.abs(clockSkewMs) > 120000) {
+        var hours = Math.round(Math.abs(clockSkewMs) / 36000) / 100;
+        $("clockNote").hidden = false;
+        $("clockNote").innerHTML = '<div class="warn"><b>This device\u2019s clock is ' +
+          hours + " hours " + (clockSkewMs < 0 ? "fast" : "slow") +
+          ".</b> The shop\u2019s own clock is being used instead, so the dates here are" +
+          " right. Worth fixing the device as well.</div>";
+      }
+    }).catch(function () { /* no clock reading is better than a wrong one */ });
+  }
+
   function startApp(session) {
     return sb.from("profiles").select("role, full_name").eq("id", session.user.id)
       .single().then(function (res) {
@@ -3359,7 +3399,7 @@
 
         db = makeDb();
         applyPeriodUI();
-        return refreshAll();
+        return syncClock().then(refreshAll);
       }).then(function () {
         // A quiet poll keeps two devices roughly in step without any realtime setup.
         setInterval(function () { if (!document.hidden) refreshAll(); }, 20000);
