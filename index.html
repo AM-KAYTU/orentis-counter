@@ -429,7 +429,6 @@
     <section id="view-sell">
       <dl class="strip" id="strip"></dl>
       <div id="loadNote" hidden></div>
-      <div id="clockNote" hidden></div>
       <div id="priceWarn" hidden></div>
       <button class="act repair-cta" id="repairCta" type="button">Record a repair job</button>
       <h2>Tap an item to sell</h2>
@@ -3357,13 +3356,12 @@
       // the reading was taken somewhere inside the round trip
       var midpoint = started + (Date.now() - started) / 2;
       clockSkewMs = serverMs - midpoint;
-      if (Math.abs(clockSkewMs) > 120000) {
-        var hours = Math.round(Math.abs(clockSkewMs) / 36000) / 100;
-        $("clockNote").hidden = false;
-        $("clockNote").innerHTML = '<div class="warn"><b>This device\u2019s clock is ' +
-          hours + " hours " + (clockSkewMs < 0 ? "fast" : "slow") +
-          ".</b> The shop\u2019s own clock is being used instead, so the dates here are" +
-          " right. Worth fixing the device as well.</div>";
+      // Nothing is shown about this: the correction is silent and the dates are
+      // right either way. Left in the console for when something looks wrong.
+      if (Math.abs(clockSkewMs) > 120000 && window.console && console.log) {
+        console.log("[counter] device clock is " +
+          (Math.round(Math.abs(clockSkewMs) / 36000) / 100) + " hours " +
+          (clockSkewMs < 0 ? "fast" : "slow") + "; using the shop clock instead");
       }
     }).catch(function () { /* no clock reading is better than a wrong one */ });
   }
