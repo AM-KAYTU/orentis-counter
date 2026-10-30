@@ -1,0 +1,3006 @@
+<title>Shop Counter</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+  /* ---- Fill these two in from your Supabase project settings ---- */
+  window.SHOP_CONFIG = {
+    url: "https://jxatpigdhjwmlidpsymp.supabase.co",
+    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4YXRwaWdkaGp3bWxpZHBzeW1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNjU3NDgsImV4cCI6MjEwODk0MTc0OH0.lEtzp3NBlHtzTqzUIO1QA5idg4Pt1rUWzQ0sd9dGDc8",
+    shopName: "Orentis Shop Counter"
+  };
+</script>
+
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+  /* Counter app: tap an item, the floor price is shown and enforced, record the sale. Cost shows only to the owner. */
+  :root {
+    --bg: #f3f5f2;
+    --surface: #ffffff;
+    --surface-2: #e9ede9;
+    --ink: #14201b;
+    --muted: #5c6b64;
+    --line: #d9e0db;
+    --primary: #15614a;
+    --primary-ink: #ffffff;
+    --credit: #a2670c;
+    --danger: #a32218;
+    --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --body: "Barlow", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1512; --surface: #182019; --surface-2: #212b24;
+      --ink: #e9efea; --muted: #93a099; --line: #2a342d;
+      --primary: #3da37f; --primary-ink: #06120d;
+      --credit: #d9961f; --danger: #e4776a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1512; --surface: #182019; --surface-2: #212b24;
+    --ink: #e9efea; --muted: #93a099; --line: #2a342d;
+    --primary: #3da37f; --primary-ink: #06120d;
+    --credit: #d9961f; --danger: #e4776a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--body); margin: 0; -webkit-text-size-adjust: 100%;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .wrap {
+    max-width: 760px; margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0 80px;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 10;
+  }
+  header {
+    position: sticky; top: env(safe-area-inset-top, 0px);
+    background: var(--bg); z-index: 9;
+    padding-block: 14px 8px; border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  h1 {
+    font-family: var(--display); font-weight: 700; font-size: 1.45rem;
+    letter-spacing: .01em; margin: 0; text-wrap: balance;
+  }
+  .who { font-size: .78rem; color: var(--muted); font-weight: 500; }
+
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav button {
+    flex: 1 1 auto; min-width: 84px;
+    font-family: var(--display); font-size: 1rem; font-weight: 600;
+    letter-spacing: .03em; text-transform: uppercase;
+    padding: 9px 6px; border: 1px solid transparent; border-radius: 7px;
+    background: transparent; color: var(--muted); cursor: pointer;
+  }
+  nav button[aria-selected="true"] {
+    background: var(--surface); color: var(--ink); border-color: var(--line);
+  }
+  nav button .dot {
+    display: inline-block; min-width: 18px; padding: 0 4px; margin-left: 4px;
+    border-radius: 9px; background: var(--credit); color: #fff;
+    font-family: var(--body); font-size: .7rem; font-weight: 700;
+  }
+
+  .gate {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+    padding: max(16px, env(safe-area-inset-left, 0px));
+  }
+  .gatebox {
+    width: 100%; max-width: 360px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 14px; padding: 22px 20px;
+  }
+  .gatetitle {
+    font-family: var(--display); font-size: 1.6rem; font-weight: 700;
+    margin: 0 0 4px;
+  }
+  .gatesub { color: var(--muted); font-size: .9rem; margin: 0 0 18px; }
+  .gatebox .act { width: 100%; margin-top: 4px; }
+  .gatebox .note { margin-top: 14px; }
+  [hidden] { display: none !important; }
+  .rowhead {
+    flex: 1 1 auto; min-width: 0; text-align: left; font: inherit;
+    background: transparent; border: none; padding: 0; cursor: pointer; color: inherit;
+  }
+  .rowhead:hover .nm { text-decoration: underline; }
+  .periodbar { margin-bottom: 10px; }
+  .seg.period { flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .periodbar .seg.period { margin-bottom: 0; }
+  .seg.period button {
+    flex: 0 1 auto; padding: 7px 11px; font-size: .85rem;
+    font-family: var(--display); letter-spacing: .03em; text-transform: uppercase;
+  }
+  .daterange {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px;
+  }
+  .daterange label {
+    font-size: .7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--muted);
+  }
+  .daterange input {
+    font: inherit; font-size: .92rem; padding: 7px 10px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+    min-width: 0; flex: 1 1 130px;
+  }
+  .strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 1px; background: var(--line); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden; margin-block: 16px;
+  }
+  .strip div { background: var(--surface); padding: 10px 12px; min-width: 0; }
+  .strip dt {
+    font-size: .68rem; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); font-weight: 600; margin: 0 0 3px;
+  }
+  .strip dd {
+    margin: 0; font-family: var(--display); font-weight: 700;
+    font-size: 1.3rem; line-height: 1;
+  }
+
+  h2 {
+    font-family: var(--display); font-size: .95rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 22px 0 10px;
+  }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+    gap: 10px;
+  }
+  .item {
+    display: flex; flex-direction: column; gap: 8px; text-align: left;
+    min-width: 0; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 13px; cursor: pointer; font: inherit;
+  }
+  .item:hover:not(:disabled) { border-color: var(--primary); }
+  .item:disabled { opacity: .45; cursor: not-allowed; }
+  .item .nm { font-weight: 600; font-size: .95rem; line-height: 1.25; overflow-wrap: anywhere; }
+  .item .price {
+    font-family: var(--display); font-size: 1.75rem; font-weight: 700;
+    line-height: 1; color: var(--primary);
+  }
+  .item .price small {
+    display: block; font-family: var(--body); font-size: .64rem; font-weight: 700;
+    letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 3px; letter-spacing: .07em;
+  }
+  .item .left {
+    font-size: .78rem; color: var(--muted); font-weight: 600;
+    margin-top: auto; padding-top: 2px;
+  }
+
+  .row {
+    display: flex; gap: 12px; align-items: flex-start;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px; margin-bottom: 8px;
+  }
+  .row .main { flex: 1 1 auto; min-width: 0; }
+  .row .nm { font-weight: 600; overflow-wrap: anywhere; }
+  .row .sub { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+  .row .amt { font-family: var(--display); font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
+  .pill {
+    display: inline-block; font-size: .64rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .07em;
+    padding: 2px 6px; border-radius: 4px; margin-left: 6px;
+    border: 1px solid currentColor;
+  }
+  .pill.cash { color: var(--primary); }
+  .pill.credit { color: var(--credit); }
+
+  .empty {
+    border: 1px dashed var(--line); border-radius: 10px;
+    padding: 26px 18px; text-align: center; color: var(--muted);
+  }
+  .empty strong {
+    display: block; color: var(--ink); font-family: var(--display);
+    font-size: 1.1rem; margin-bottom: 4px;
+  }
+
+  button.act {
+    font-family: var(--display); font-size: 1.05rem; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+    padding: 13px 16px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--primary); background: var(--primary); color: var(--primary-ink);
+  }
+  button.act.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+  button.act:disabled { opacity: .45; cursor: not-allowed; }
+  button.mini {
+    font: inherit; font-size: .8rem; font-weight: 600;
+    padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--ink); border: 1px solid var(--line);
+  }
+
+  .scrim {
+    position: fixed; inset: 0; background: rgba(8,16,12,.55);
+    display: flex; align-items: flex-end; justify-content: center; z-index: 20;
+  }
+  .sheet {
+    --pb: calc(18px + env(safe-area-inset-bottom, 0px));
+    background: var(--surface); width: 100%; max-width: 480px;
+    border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: none;
+    padding: 18px max(16px, env(safe-area-inset-right, 0px))
+             var(--pb) max(16px, env(safe-area-inset-left, 0px));
+    max-height: 88vh; overflow-y: auto;
+  }
+  .sheet h3 { font-family: var(--display); font-size: 1.3rem; font-weight: 700; margin: 0 0 9px; text-wrap: balance; }
+  .floor {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; background: var(--surface-2); border-radius: 8px;
+    padding: 10px 13px; margin-bottom: 13px;
+  }
+  .floor span { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .floor strong { font-family: var(--display); font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block; font-size: .7rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  .field input {
+    display: block; width: 100%; font: inherit; font-size: 1.02rem;
+    padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink);
+  }
+  .stepper { display: flex; gap: 8px; }
+  .stepper button {
+    font-family: var(--display); font-size: 1.4rem; font-weight: 700;
+    width: 52px; flex: 0 0 52px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+  }
+  .stepper input { text-align: center; font-variant-numeric: tabular-nums; }
+  .seg { display: flex; gap: 8px; }
+  .seg button {
+    flex: 1 1 0; font: inherit; font-weight: 600; font-size: .95rem;
+    padding: 11px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--muted);
+  }
+  .seg button[aria-pressed="true"] {
+    border-color: var(--primary); background: var(--primary); color: var(--primary-ink);
+  }
+  .total {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; padding: 11px 0; margin-bottom: 6px;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  }
+  .total span { font-size: .8rem; font-weight: 600; color: var(--muted); }
+  .total strong { font-family: var(--display); font-size: 1.8rem; font-weight: 700; }
+  .flag {
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
+    font-size: .86rem; line-height: 1.4;
+    border: 1px solid var(--danger); color: var(--danger);
+  }
+  .sheet-actions { display: flex; gap: 8px; margin-top: 4px; }
+  .sheet-actions .act { flex: 1 1 auto; }
+
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    background: var(--ink); color: var(--bg);
+    padding: 11px 18px; border-radius: 8px; z-index: 30;
+    font-weight: 600; font-size: .9rem; max-width: 86vw; text-align: center;
+  }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .sheet { animation: rise .16s ease-out; }
+    @keyframes rise { from { transform: translateY(14px); } }
+  }
+  .note { font-size: .8rem; color: var(--muted); line-height: 1.5; margin-top: 18px; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .search {
+    width: 100%; font: inherit; font-size: 1rem; padding: 11px 13px;
+    border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); margin-bottom: 12px;
+  }
+  .warn {
+    border: 1px solid var(--credit); color: var(--credit);
+    border-radius: 8px; padding: 11px 13px; font-size: .86rem;
+    line-height: 1.45; margin-bottom: 4px;
+  }
+  .warn b { font-weight: 700; }
+  .item.unpriced { border-style: dashed; }
+  .item.unpriced .price { color: var(--credit); }
+  .repair-cta { width: 100%; margin-bottom: 10px; }
+  .field .sub-note {
+    font-size: .78rem; color: var(--muted);
+    margin: 6px 0 0; line-height: 1.4;
+  }
+  .sheet-foot {
+    position: sticky; z-index: 1;
+    bottom: calc(-1 * var(--pb));
+    margin-bottom: calc(-1 * var(--pb));
+    padding-bottom: var(--pb);
+    background: var(--surface); padding-top: 8px; margin-top: 2px;
+    box-shadow: 0 -10px 14px -10px rgba(0, 0, 0, .3);
+  }
+  .sheet-foot .total { margin-bottom: 10px; }
+  @media (min-width: 640px) and (min-height: 560px) {
+    .scrim { align-items: center; padding: 20px; }
+    .sheet {
+      --pb: 18px;
+      border-radius: 14px; border-bottom: 1px solid var(--line);
+      max-height: 84vh;
+    }
+  }
+
+  .ledger {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden; margin-bottom: 4px;
+  }
+  .ledger div.line {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; padding: 10px 13px; border-bottom: 1px solid var(--line);
+  }
+  .ledger div.line:last-child { border-bottom: none; }
+  .ledger .lbl { font-size: .9rem; min-width: 0; }
+  .ledger .val {
+    font-family: var(--display); font-weight: 700; font-size: 1.05rem;
+    white-space: nowrap;
+  }
+  .ledger .line.total { background: var(--surface-2); }
+  .ledger .line.total .lbl {
+    font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; font-size: .78rem;
+  }
+  .ledger .line.total .val { font-size: 1.35rem; }
+  .ledger .line.sub .lbl { padding-left: 14px; color: var(--muted); font-size: .84rem; }
+  .ledger .line.sub .val { font-size: .95rem; color: var(--muted); }
+  .ledger .hint {
+    padding: 9px 13px; font-size: .8rem; color: var(--muted);
+    line-height: 1.45; border-bottom: 1px solid var(--line);
+  }
+  .pos { color: var(--primary); }
+  .neg { color: var(--danger); }
+  .due { color: var(--credit); }
+  .meter {
+    height: 7px; border-radius: 4px; background: var(--surface-2);
+    overflow: hidden; margin: 2px 13px 11px;
+  }
+  .meter span { display: block; height: 100%; background: var(--primary); }
+  .meter span.hot { background: var(--danger); }
+</style>
+
+<div class="gate" id="gate">
+  <form class="gatebox" id="loginForm" autocomplete="on">
+    <h1 class="gatetitle">Shop Counter</h1>
+    <p class="gatesub" id="gateSub">Sign in to open the counter.</p>
+    <div class="field">
+      <label for="g-email">Email</label>
+      <input id="g-email" type="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="g-pass">Password</label>
+      <input id="g-pass" type="password" autocomplete="current-password" required>
+    </div>
+    <div id="g-flag"></div>
+    <button class="act" type="submit" id="g-submit">Sign in</button>
+    <p class="note" id="g-note">Ask Fiifi for an account if you do not have one.</p>
+  </form>
+</div>
+
+<div class="wrap" id="appWrap" hidden>
+  <header>
+    <div class="brand">
+      <h1>Shop Counter</h1>
+      <span class="who" id="who">Connecting&hellip;</span>
+      <button class="mini" id="signOut" type="button" hidden>Sign out</button>
+    </div>
+    <div class="periodbar" id="periodBar">
+      <div class="seg period" id="periodSeg">
+        <button type="button" data-period="today" aria-pressed="true">Today</button>
+        <button type="button" data-period="week" aria-pressed="false">7 days</button>
+        <button type="button" data-period="month" aria-pressed="false">This month</button>
+        <button type="button" data-period="all" aria-pressed="false">All</button>
+        <button type="button" data-period="custom" aria-pressed="false">Dates</button>
+      </div>
+      <p class="note" id="periodNote" style="margin-top:8px"></p>
+      <div class="daterange" id="dateRange" hidden>
+        <label for="pFrom">From</label>
+        <input id="pFrom" type="date">
+        <label for="pTo">To</label>
+        <input id="pTo" type="date">
+      </div>
+    </div>
+    <nav id="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-view="sell">Sell</button>
+      <button role="tab" aria-selected="false" data-view="today">Sales</button>
+      <button role="tab" aria-selected="false" data-view="repairs">Repairs</button>
+      <button role="tab" aria-selected="false" data-view="owed">Owed<span class="dot" id="owedCount" hidden>0</span></button>
+      <button role="tab" aria-selected="false" data-view="people">People</button>
+      <button role="tab" aria-selected="false" data-view="money" id="tabMoney" hidden>Money</button>
+      <button role="tab" aria-selected="false" data-view="stock" id="tabStock" hidden>Stock</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-sell">
+      <dl class="strip" id="strip"></dl>
+      <div id="loadNote" hidden></div>
+      <div id="priceWarn" hidden></div>
+      <button class="act repair-cta" id="repairCta" type="button">Record a repair job</button>
+      <h2>Tap an item to sell</h2>
+      <input class="search" id="search" type="search" placeholder="Search items&hellip;" autocomplete="off" aria-label="Search items">
+      <div class="grid" id="grid">
+        <div class="empty" style="grid-column:1/-1">
+          <strong>Loading stock&hellip;</strong>
+          Items appear here as soon as the shop list loads.
+        </div>
+      </div>
+      <p class="note" id="sellNote"></p>
+    </section>
+
+    <section id="view-today" hidden>
+      <dl class="strip" id="salesStrip"></dl>
+      <div class="bar">
+        <button class="mini" id="csvBtn" hidden>Download sales CSV</button>
+      </div>
+      <h2>All sales recorded</h2>
+      <div id="todayList"></div>
+    </section>
+
+    <section id="view-repairs" hidden>
+      <dl class="strip" id="repairStrip"></dl>
+      <button class="act repair-cta" id="repairCta2" type="button">Record a repair job</button>
+      <h2>Repair jobs recorded</h2>
+      <div id="jobList"></div>
+    </section>
+
+    <section id="view-owed" hidden>
+      <dl class="strip" id="owedStrip"></dl>
+      <button class="act repair-cta" id="hpCta" type="button">New hire purchase</button>
+      <div class="seg period" id="owedSeg">
+        <button type="button" data-owed="all" aria-pressed="true">Everyone</button>
+        <button type="button" data-owed="behind" aria-pressed="false">Behind</button>
+        <button type="button" data-owed="hp" aria-pressed="false">Hire purchase</button>
+        <button type="button" data-owed="credit" aria-pressed="false">Goods &amp; repairs</button>
+      </div>
+      <input class="search" id="owedSearch" type="search" placeholder="Search name, number or item&hellip;" autocomplete="off" aria-label="Search who owes you">
+      <div id="owedList"></div>
+    </section>
+
+    <section id="view-people" hidden>
+      <dl class="strip" id="peopleStrip"></dl>
+      <h2>Customers</h2>
+      <input class="search" id="peopleSearch" type="search" placeholder="Search by name or number&hellip;" autocomplete="off" aria-label="Search customers">
+      <div id="peopleList"></div>
+      <p class="note">Numbers are saved when a sale or repair is recorded. Tap a number to copy it.</p>
+    </section>
+
+    <section id="view-money" hidden>
+      <div class="seg period" id="moneySeg">
+        <button type="button" data-money="position" aria-pressed="true">Position</button>
+        <button type="button" data-money="supplier" aria-pressed="false">Supplier</button>
+        <button type="button" data-money="costs" aria-pressed="false">Running costs</button>
+      </div>
+
+      <div id="money-position">
+        <h2>Cash position</h2>
+        <div id="cashBlock"></div>
+        <h2>Are you building or eroding?</h2>
+        <div id="capitalBlock"></div>
+      </div>
+
+      <div id="money-supplier" hidden>
+        <h2>Owed to the supplier</h2>
+        <div id="supplierBlock"></div>
+      </div>
+
+      <div id="money-costs" hidden>
+        <button class="act repair-cta" id="addCostCta" type="button">Record a cost</button>
+        <p class="note">Transport, fuel, rent, airtime — everything that leaves the shop. Leave any out and the profit figures will flatter you.</p>
+        <div id="expenseList"></div>
+      </div>
+    </section>
+
+    <section id="view-stock" hidden>
+      <div class="seg period" id="stockSeg">
+        <button type="button" data-stock="items" aria-pressed="true">Items</button>
+        <button type="button" data-stock="services" aria-pressed="false">Repair jobs</button>
+      </div>
+
+      <div id="stock-items">
+        <div id="stockSummary"></div>
+        <button class="act repair-cta" id="addItemCta" type="button">Add an item</button>
+        <input class="search" id="stockSearch" type="search" placeholder="Search items&hellip;" autocomplete="off" aria-label="Search stock">
+        <div id="stockList"></div>
+      </div>
+
+      <div id="stock-services" hidden>
+        <button class="act repair-cta" id="addServiceCta" type="button">Add a repair job</button>
+        <p class="note">These are the jobs your attendant can pick from. A usual charge is a guide, never a floor — repairs are quoted on the fault.</p>
+        <div id="serviceList"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var db = null, user = null, dl = null;
+  var stock = [], sales = [], jobs = [], services = [];
+  var expenses = [], tranches = [], receivables = [], payments = [], customers = [];
+  var deals = [];
+  var stockLoaded = false;
+  var isOwner = false, canWrite = null;
+  var view = "sell";
+  var sheetEl = null, toastT = 0;
+
+  function $(id) { return document.getElementById(id); }
+
+  function cedi(n) {
+    return "₵" + Math.round(Number(n) || 0).toLocaleString("en-GH");
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  var period = { mode: "today", from: "", to: "" };
+  try {
+    var saved = localStorage.getItem("counter.period");
+    if (saved) period = JSON.parse(saved);
+  } catch (e) { /* a remembered filter is a convenience, not a requirement */ }
+
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function ymd(d) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+  /* The local calendar day a record belongs to. Date-only strings are already
+     local days, so they are taken as written rather than parsed as UTC. */
+  function ymdOf(ts) {
+    var str = String(ts || "");
+    if (!str) return "";
+    if (str.length === 10) return str;
+    var d = new Date(str);
+    return isNaN(d) ? str.slice(0, 10) : ymd(d);
+  }
+
+  function periodRange() {
+    var t = new Date(); t.setHours(0, 0, 0, 0);
+    if (period.mode === "today") return { from: ymd(t), to: ymd(t) };
+    if (period.mode === "week") {
+      var w = new Date(t); w.setDate(w.getDate() - 6);
+      return { from: ymd(w), to: ymd(t) };
+    }
+    if (period.mode === "month") {
+      return { from: ymd(new Date(t.getFullYear(), t.getMonth(), 1)), to: ymd(t) };
+    }
+    if (period.mode === "custom") {
+      return { from: period.from || "0000-01-01", to: period.to || "9999-12-31" };
+    }
+    return { from: "0000-01-01", to: "9999-12-31" };
+  }
+
+  function inPeriod(ts) {
+    var d = ymdOf(ts);
+    if (!d) return false;
+    var r = periodRange();
+    return d >= r.from && d <= r.to;
+  }
+
+  function periodLabel() {
+    var r = periodRange();
+    if (period.mode === "today") return "today";
+    if (period.mode === "week") return "the last 7 days";
+    if (period.mode === "month") return "this month";
+    if (period.mode === "all") return "all time";
+    if (r.from === "0000-01-01" && r.to === "9999-12-31") return "all time";
+    if (r.from === r.to) return r.from;
+    return r.from + " to " + r.to;
+  }
+
+  function dayKey(d) {
+    var x = d ? new Date(d) : new Date();
+    if (isNaN(x)) return "";
+    return x.getFullYear() + "-" + (x.getMonth() + 1) + "-" + x.getDate();
+  }
+  function stampOf(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return "";
+    var today = dayKey(iso) === dayKey();
+    return today
+      ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      : d.toLocaleDateString([], { day: "numeric", month: "short" });
+  }
+  function toast(msg) {
+    var old = document.querySelector(".toast");
+    if (old) old.remove();
+    var el = document.createElement("div");
+    el.className = "toast";
+    el.setAttribute("role", "status");
+    el.textContent = msg;
+    document.body.appendChild(el);
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { el.remove(); }, 2600);
+  }
+
+  function soldFor(id) {
+    var n = 0;
+    for (var i = 0; i < sales.length; i++) {
+      if (sales[i].itemId === id) n += Number(sales[i].qty) || 0;
+    }
+    return n;
+  }
+  /* What to put on screen when a save fails. "Check your connection" sent us
+     hunting the wrong thing once; if the database gave a reason, show it. */
+  function saveProblem(e, what) {
+    var code = e && e.code;
+    if (code === "invalid_argument" || code === "42501" || code === "PGRST301") {
+      return "You are not allowed to record a " + what + " here.";
+    }
+    var msg = (e && (e.message || e.details)) || "";
+    if (!msg || /network|fetch|load failed/i.test(msg)) {
+      return "Could not save. Check your connection and try again.";
+    }
+    return "Could not save \u2014 " + msg;
+  }
+
+  function leftFor(it) { return Math.max(0, (Number(it.qty) || 0) - soldFor(it.id)); }
+  function owedSales() {
+    var a = sales.filter(function (s) {
+      return (Number(s.total) || 0) - (Number(s.received) || 0) > 0.5;
+    });
+    var b = jobs.filter(function (j) {
+      return (Number(j.charge) || 0) - (Number(j.received) || 0) > 0.5;
+    }).map(function (j) {
+      return { id: j.id, _job: true, ts: j.ts, name: j.service,
+               qty: 1, total: Number(j.charge) || 0,
+               received: Number(j.received) || 0,
+               buyer: j.buyer, phone: j.phone, customerId: j.customerId,
+               dueDate: j.dueDate };
+    });
+    return a.concat(b);
+  }
+
+  /* ---------- rendering ---------- */
+
+  function renderStrip() {
+    var cash = 0, credit = 0, units = 0, profit = 0;
+    var costById = {};
+    stock.forEach(function (it) { costById[it.id] = Number(it.cost) || 0; });
+    sales.forEach(function (s) {
+      if (!inPeriod(s.ts)) return;
+      var tot = Number(s.total) || 0, rec = Number(s.received) || 0;
+      cash += rec;
+      credit += Math.max(0, tot - rec);
+      units += Number(s.qty) || 0;
+      profit += tot - (costById[s.itemId] || 0) * (Number(s.qty) || 0);
+    });
+    var jc = 0, jcr = 0, jn = 0, jp = 0;
+    jobs.forEach(function (j) {
+      if (!inPeriod(j.ts)) return;
+      var ch = Number(j.charge) || 0, rec = Number(j.received) || 0;
+      jc += rec;
+      jcr += Math.max(0, ch - rec);
+      jn += 1;
+      jp += ch - (Number(j.partsCost) || 0);
+    });
+
+    // Money that left the shop inside the chosen period.
+    var outflow = 0;
+    jobs.forEach(function (j) {
+      if (inPeriod(j.ts)) outflow += num(j.partsCost);
+    });
+    expenses.forEach(function (x) {
+      if (inPeriod(x.ts)) outflow += num(x.amount);
+    });
+    payments.forEach(function (p) {
+      if (p.refType === "tranche" && inPeriod(p.ts)) outflow += num(p.amount);
+    });
+    deals.forEach(function (d) {
+      if (inPeriod(d.ts)) outflow += num(d.cost);
+    });
+
+    var cells = [["Cash in", cedi(cash + jc)],
+                 ["Cash out", cedi(outflow)],
+                 ["Unpaid", cedi(credit + jcr)],
+                 ["Units sold", String(units)],
+                 ["Repairs", String(jn)]];
+    if (isOwner) cells.push(["Profit", cedi(profit + jp)]);
+    $("strip").innerHTML = cells.map(function (c) {
+      return "<div><dt>" + esc(c[0]) + '</dt><dd class="num">' + esc(c[1]) + "</dd></div>";
+    }).join("");
+
+    var rcells = [["Repairs", String(jn)],
+                  ["Charged", cedi(jc + jcr)],
+                  ["Cash in", cedi(jc)],
+                  ["Unpaid", cedi(jcr)]];
+    if (isOwner) rcells.push(["Earned", cedi(jp)]);
+    $("repairStrip").innerHTML = rcells.map(function (c) {
+      return "<div><dt>" + esc(c[0]) + '</dt><dd class="num">' + esc(c[1]) + "</dd></div>";
+    }).join("");
+  }
+
+  function matches(it, q) {
+    if (!q) return true;
+    return String(it.name || "").toLowerCase().indexOf(q) !== -1;
+  }
+
+  function renderGrid() {
+    var g = $("grid");
+    if (!stockLoaded) {
+      g.innerHTML = '<div class="empty" style="grid-column:1/-1">' +
+        "<strong>Loading stock&hellip;</strong>Reading the shop records.</div>";
+      return;
+    }
+    if (!stock.length) {
+      g.innerHTML = '<div class="empty" style="grid-column:1/-1"><strong>No items yet</strong>' +
+        (isOwner ? "Open the Stock tab to add your first item."
+                 : "Ask Fiifi to add the shop’s items to this screen.") + "</div>";
+      return;
+    }
+    var q = ($("search").value || "").trim().toLowerCase();
+    var shown = stock.filter(function (it) { return matches(it, q); });
+    if (!shown.length) {
+      g.innerHTML = '<div class="empty" style="grid-column:1/-1"><strong>Nothing matches</strong>' +
+        "Try part of the item name.</div>";
+      return;
+    }
+    g.innerHTML = shown.map(function (it) {
+      var left = leftFor(it);
+      var floor = Number(it.price) || 0;
+      return '<button class="item' + (floor ? "" : " unpriced") + '" data-id="' + esc(it.id) + '"' +
+        (left <= 0 ? " disabled" : "") + ">" +
+        '<span class="nm">' + esc(it.name) + "</span>" +
+        '<span class="price num"><small>Sell at</small>' + (floor ? cedi(floor) : "no price") + "</span>" +
+        '<span class="left num">' + (left > 0 ? left + " in stock" : "Sold out") + "</span>" +
+        "</button>";
+    }).join("");
+  }
+
+  function renderPriceWarn() {
+    var el = $("priceWarn");
+    var n = stock.filter(function (it) {
+      return !(Number(it.price) > 0) && leftFor(it) > 0;
+    }).length;
+    if (!n) { el.hidden = true; el.innerHTML = ""; return; }
+    el.hidden = false;
+    el.innerHTML = '<div class="warn"><b>' + n + " item" + (n === 1 ? "" : "s") +
+      " still have no price.</b> " + (isOwner
+        ? "Set a floor on the Stock tab before selling them — until then there is nothing stopping a sale at any price."
+        : "Do not sell those until Fiifi sets a price.") + "</div>";
+  }
+
+  function renderToday() {
+    var t = sales.filter(function (s) { return inPeriod(s.ts); })
+      .sort(function (a, b) { return String(b.ts).localeCompare(String(a.ts)); });
+    var el = $("todayList");
+    if (!t.length) {
+      el.innerHTML = '<div class="empty"><strong>No sales in this period</strong>' +
+        "Nothing was sold " + esc(periodLabel()) + ". Widen the dates above to see more.</div>";
+      return;
+    }
+    el.innerHTML = t.map(function (s) {
+      var tot = Number(s.total) || 0, rec = Number(s.received) || 0;
+      var owes = Math.max(0, tot - rec);
+      var kind = owes > 0.5 ? "credit" : "cash";
+      var today = dayKey(s.ts) === dayKey();
+      return '<div class="row"><div class="main">' +
+        '<div class="nm">' + esc(s.name) + " &times; " + (Number(s.qty) || 0) +
+          '<span class="pill ' + kind + '">' + (kind === "cash" ? "Paid" : "Credit") + "</span></div>" +
+        '<div class="sub num">' + stampOf(s.ts) + " · " + cedi(s.unitPrice) + " each" +
+          (s.buyer ? " · " + esc(s.buyer) : "") + "</div></div>" +
+        '<div class="amt num">' + cedi(tot) + "</div>" +
+        (canWrite !== false && today ? '<button class="mini" data-undo="' + esc(s.id) + '">Undo</button>' : "") +
+        "</div>";
+    }).join("");
+  }
+
+  function renderOwedBadge() {
+    var n = owedRows().length;
+    var badge = $("owedCount");
+    if (n) { badge.hidden = false; badge.textContent = String(n); }
+    else badge.hidden = true;
+  }
+
+  var owedView = "all";
+  var owedOpen = {};
+
+  /* Everything anyone still owes, in one shape, so hire purchase and credit
+     sit in a single list instead of separate sections you scroll past. */
+  function owedRows() {
+    var rows = [];
+    deals.forEach(function (d) {
+      var st = dealStanding(d);
+      if (st.balance <= 0.5) return;
+      rows.push({
+        kind: "hp", id: d.id, src: d, title: d.device || "Phone",
+        who: custLabel(d), phone: custPhone(d),
+        balance: st.balance, overdue: st.behind > 0.5, behind: st.behind,
+        dueDate: st.next ? st.next.due : "", st: st
+      });
+    });
+    receivables.forEach(function (x) {
+      var bal = Math.max(0, num(x.amount) - num(x.paid));
+      if (bal <= 0.5) return;
+      var over = x.dueDate ? daysSince(x.dueDate) : null;
+      var late = over !== null && over > 0;
+      rows.push({
+        kind: "other", id: x.id, src: x, title: x.name || "Arrangement",
+        who: x.name || "", phone: "",
+        balance: bal, overdue: late, behind: late ? bal : 0,
+        dueDate: x.dueDate || "",
+        age: x.dueDate ? (late ? over + " day" + (over === 1 ? "" : "s") + " overdue"
+                               : "due " + x.dueDate) : "no date set"
+      });
+    });
+    owedSales().forEach(function (x) {
+      var bal = num(x.total) - num(x.received);
+      var a = ageOf(x);
+      var late = a.overdue !== null && a.overdue > 0;
+      rows.push({
+        kind: x._job ? "repair" : "goods", id: x.id, src: x, title: x.name,
+        who: custLabel(x), phone: custPhone(x),
+        balance: bal, overdue: late, behind: late ? bal : 0,
+        dueDate: x.dueDate || "", age: ageText(x)
+      });
+    });
+    return rows;
+  }
+
+  function owedSorted() {
+    var q = ($("owedSearch").value || "").trim().toLowerCase();
+    var qk = q.replace(/[^0-9]/g, "");
+    return owedRows().filter(function (r) {
+      if (owedView === "behind" && !r.overdue) return false;
+      if (owedView === "hp" && r.kind !== "hp") return false;
+      if (owedView === "credit" && r.kind === "hp") return false;
+      if (!q) return true;
+      return String(r.who).toLowerCase().indexOf(q) !== -1 ||
+             String(r.title).toLowerCase().indexOf(q) !== -1 ||
+             (!!qk && String(r.phone).replace(/[^0-9]/g, "").indexOf(qk) !== -1);
+    }).sort(function (a, b) {
+      // Whoever is behind comes first, then whatever falls due soonest.
+      if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+      var ad = a.dueDate || "9999-12-31", bd = b.dueDate || "9999-12-31";
+      if (ad !== bd) return ad < bd ? -1 : 1;
+      return b.balance - a.balance;
+    });
+  }
+
+  function kindChip(kind) {
+    if (kind === "hp") return '<span class="pill credit">HP</span>';
+    if (kind === "repair") return '<span class="pill cash">Repair</span>';
+    if (kind === "other") return '<span class="pill credit">Other</span>';
+    return '<span class="pill cash">Goods</span>';
+  }
+
+  function owedDetail(r) {
+    if (r.kind === "hp") {
+      var st = r.st, d = r.src;
+      var lines = [
+        { label: "Agreed price", value: cedi(st.price) },
+        { label: "Paid so far", value: cedi(st.received), sub: true, tone: "pos" },
+        { label: "Balance", value: cedi(st.balance), sub: true, tone: "due" }
+      ];
+      if (st.behind > 0.5) {
+        lines.push({ label: "Behind schedule by", value: cedi(st.behind), tone: "neg" });
+      }
+      dealSchedule(d).forEach(function (i) {
+        lines.push({ label: "Instalment " + i.n + " \u00b7 " + i.due,
+                     value: cedi(i.amount), sub: true, tone: i.past ? "due" : "" });
+      });
+      if (isOwner) {
+        lines.push({ label: "Cost you " + cedi(d.cost) + ", deal earns",
+                     value: cedi(st.profit), sub: true });
+      }
+      return ledger(lines);
+    }
+    if (r.kind === "other") {
+      var o = r.src;
+      return ledger([
+        { label: "Agreed", value: cedi(o.amount) },
+        { label: "Paid so far", value: cedi(o.paid), sub: true, tone: "pos" },
+        { label: "Balance", value: cedi(r.balance), sub: true, tone: "due" },
+        { label: "Status", value: r.age, sub: true, tone: r.overdue ? "neg" : "" }
+      ].concat(historyFor("receivable", o.id).map(function (p) {
+        return { label: "Paid " + String(p.ts || "").slice(0, 10),
+                 value: cedi(p.amount), sub: true };
+      })));
+    }
+    var x = r.src;
+    var hist = historyFor(x._job ? "job" : "sale", x.id);
+    var l2 = [
+      { label: "Total", value: cedi(x.total) },
+      { label: "Paid so far", value: cedi(x.received), sub: true, tone: "pos" },
+      { label: "Balance", value: cedi(r.balance), sub: true, tone: "due" },
+      { label: "Status", value: r.age, sub: true, tone: r.overdue ? "neg" : "" }
+    ];
+    hist.forEach(function (p) {
+      l2.push({ label: "Paid " + String(p.ts || "").slice(0, 10),
+                value: cedi(p.amount), sub: true });
+    });
+    return ledger(l2);
+  }
+
+  function renderOwedList() {
+    var rows = owedSorted();
+    var el = $("owedList");
+    if (!rows.length) {
+      el.innerHTML = '<div class="empty"><strong>' +
+        (owedView === "behind" ? "Nobody is behind" : "Nobody owes you") + "</strong>" +
+        (owedView === "behind" ? "Everyone paying on instalments is up to date."
+                               : "Every sale and repair has been paid in full.") + "</div>";
+      return;
+    }
+    el.innerHTML = rows.map(function (r) {
+      var open = !!owedOpen[r.kind + ":" + r.id];
+      var when = r.kind === "hp"
+        ? (r.overdue ? "behind by " + cedi(r.behind)
+                     : (r.dueDate ? "next " + esc(r.dueDate) : "no schedule"))
+        : esc(r.age);
+      return '<div class="row" style="display:block">' +
+        '<div style="display:flex;gap:10px;align-items:flex-start">' +
+          '<button class="rowhead" data-open="' + esc(r.kind + ":" + r.id) + '">' +
+            '<div class="nm">' + esc(r.title) + kindChip(r.kind) + "</div>" +
+            '<div class="sub num">' + esc(r.who) +
+              (r.phone ? " \u00b7 " + esc(r.phone) : "") + " \u00b7 " + when + "</div>" +
+          "</button>" +
+          '<div class="amt num ' + (r.overdue ? "neg" : "due") + '">' + cedi(r.balance) + "</div>" +
+          (r.phone ? '<button class="mini" data-copy="' + esc(r.phone) + '">Copy</button>' : "") +
+          (canWrite !== false
+            ? '<button class="mini" data-' +
+              (r.kind === "hp" ? "dealpay" : r.kind === "other" ? "recvpay" : "pay") +
+              '="' + esc(r.id) + '">Pay</button>' : "") +
+        "</div>" +
+        (open ? owedDetail(r) : "") +
+        "</div>";
+    }).join("");
+  }
+
+  function copyNumber(text, btn) {
+    function done() {
+      var was = btn.textContent;
+      btn.textContent = "Copied";
+      setTimeout(function () { btn.textContent = was; }, 1500);
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { toast(text); });
+        return;
+      }
+    } catch (e) { /* fall through */ }
+    toast(text);
+  }
+
+  function renderOwedStrip() {
+    var m = money();
+    var cells = [
+      ["Owed to you", cedi(m.owedToYou)],
+      ["On hire purchase", cedi(m.owedDeals)],
+      ["Goods and repairs", cedi(m.owedSales + m.owedJobs)],
+      ["Behind schedule", cedi(m.dealsBehind)]
+    ];
+    $("owedStrip").innerHTML = cells.map(function (c) {
+      return "<div><dt>" + esc(c[0]) + '</dt><dd class="num">' + esc(c[1]) + "</dd></div>";
+    }).join("");
+  }
+
+  function renderPeople() {
+    var q = ($("peopleSearch").value || "").trim().toLowerCase();
+    var rows = customers.map(function (c) {
+      var st = custStats(c.id);
+      return { c: c, st: st };
+    }).filter(function (r) {
+      if (!q) return true;
+      var qk = String(q).replace(/[^0-9]/g, "");
+      return String(r.c.name || "").toLowerCase().indexOf(q) !== -1 ||
+             (!!qk && (r.c.phoneKey || phoneKey(r.c.phone)).indexOf(qk) !== -1);
+    }).sort(function (a, b) {
+      return (b.st.owed - a.st.owed) || (b.st.spent - a.st.spent) ||
+             String(a.c.name).localeCompare(String(b.c.name));
+    });
+
+    var owing = customers.filter(function (c) { return custStats(c.id).owed > 0.5; }).length;
+    var withPhone = customers.filter(function (c) { return String(c.phone || "").trim(); }).length;
+    $("peopleStrip").innerHTML = [
+      ["Customers", String(customers.length)],
+      ["With a number", String(withPhone)],
+      ["Owing you", String(owing)]
+    ].map(function (c) {
+      return "<div><dt>" + esc(c[0]) + '</dt><dd class="num">' + esc(c[1]) + "</dd></div>";
+    }).join("");
+
+    var el = $("peopleList");
+    if (!rows.length) {
+      el.innerHTML = '<div class="empty"><strong>' +
+        (customers.length ? "Nobody matches" : "No customers yet") + "</strong>" +
+        (customers.length ? "Try part of a name or number."
+          : "Add a name when you record a sale and they will appear here.") + "</div>";
+      return;
+    }
+    el.innerHTML = rows.map(function (r) {
+      var c = r.c, st = r.st;
+      var phone = String(c.phone || "").trim();
+      return '<div class="row"><div class="main">' +
+        '<div class="nm num">' + (phone ? esc(phone) : "no number") +
+          (st.owed > 0.5 ? '<span class="pill credit">Owes</span>' : "") + "</div>" +
+        '<div class="sub">' + esc(c.name || "no name") + "</div>" +
+        '<div class="sub num">' +
+          st.count + " purchase" + (st.count === 1 ? "" : "s") +
+          " · spent " + cedi(st.spent) +
+          (st.last ? " · last " + esc(String(st.last).slice(0, 10)) : "") +
+          (st.held !== null ? " · owing " + st.held + " day" + (st.held === 1 ? "" : "s") : "") +
+          (st.late !== null ? " · " + st.late + " past due" : "") +
+        "</div></div>" +
+        (st.owed > 0.5
+          ? '<div class="amt num due">' + cedi(st.owed) + "</div>"
+          : '<div class="amt num pos">paid up</div>') +
+        (phone ? '<button class="mini" data-copy="' + esc(phone) + '">Copy</button>' : "") +
+        "</div>";
+    }).join("");
+  }
+
+  function renderStockSummary() {
+    var by = {};
+    stock.forEach(function (it) {
+      var src = it.source || "Unmarked";
+      if (!by[src]) by[src] = { items: 0, left: 0, cost: 0, retail: 0 };
+      var g = by[src], l = leftFor(it);
+      g.items += 1; g.left += l;
+      g.cost += l * num(it.cost);
+      g.retail += l * num(it.price);
+    });
+    var order = ["Supplier credit", "Legacy stock", "Own stock", "Unmarked"];
+    var lines = [];
+    var tItems = 0, tLeft = 0, tCost = 0, tRetail = 0;
+    order.forEach(function (src) {
+      var g = by[src];
+      if (!g) return;
+      lines.push({ label: src + " — " + g.left + " units, " + cedi(g.cost) + " at cost",
+                   value: cedi(g.retail), sub: true });
+      tItems += g.items; tLeft += g.left; tCost += g.cost; tRetail += g.retail;
+    });
+    lines.push({ label: tItems + " items, " + tLeft + " units left",
+                 value: cedi(tRetail), total: true });
+    lines.push({ hint: "Figures on the right are what the shelves would bring in at your floor prices. " +
+      "They cost <b>" + cedi(tCost) + "</b>, so there is <b>" + cedi(tRetail - tCost) +
+      "</b> of margin sitting in stock." });
+    $("stockSummary").innerHTML = ledger(lines);
+  }
+
+  function renderSalesSummary() {
+    var sIn = sales.filter(function (s) { return inPeriod(s.ts); });
+    var jIn = jobs.filter(function (j) { return inPeriod(j.ts); });
+    var goods = sum(sIn, function (s) { return s.total; });
+    var gcash = sum(sIn, function (s) { return s.received; });
+    var units = sum(sIn, function (s) { return s.qty; });
+    var rep = sum(jIn, function (j) { return j.charge; });
+    var cells = [["Goods sold", cedi(goods)], ["Units", String(units)],
+                 ["Repairs", cedi(rep)],
+                 ["Cash in", cedi(gcash + sum(jIn, function (j) { return j.received; }))]];
+    $("salesStrip").innerHTML = cells.map(function (c) {
+      return "<div><dt>" + esc(c[0]) + '</dt><dd class="num">' + esc(c[1]) + "</dd></div>";
+    }).join("");
+  }
+
+  function renderStock() {
+    var el = $("stockList");
+    if (!stock.length) { el.innerHTML = '<div class="empty"><strong>No items</strong>Add one above.</div>'; return; }
+    var q = ($("stockSearch").value || "").trim().toLowerCase();
+    var shown = stock.filter(function (it) { return matches(it, q); });
+    if (!shown.length) { el.innerHTML = '<div class="empty"><strong>Nothing matches</strong>Try part of the name.</div>'; return; }
+    el.innerHTML = shown.map(function (it) {
+      return '<div class="row"><div class="main"><div class="nm">' + esc(it.name) + "</div>" +
+        '<div class="sub num">' + leftFor(it) + " of " + (Number(it.qty) || 0) +
+        " left · cost " + cedi(it.cost) + " · floor " + cedi(it.price) +
+        (it.source ? " · " + esc(it.source) : "") + "</div></div>" +
+        '<button class="mini" data-edit="' + esc(it.id) + '">Price</button>' +
+        '<button class="mini" data-del="' + esc(it.id) + '">Remove</button></div>';
+    }).join("");
+  }
+
+  /* ---------- money ---------- */
+
+  function num(v) { return Number(v) || 0; }
+  function sum(arr, f) {
+    var t = 0;
+    for (var i = 0; i < arr.length; i++) t += num(f(arr[i]));
+    return t;
+  }
+  function isLegacy(it) { return it.source === "Legacy stock"; }
+
+  function money() {
+    var m = {};
+    m.cashSales = sum(sales, function (s) { return s.received; });
+    m.cashJobs = sum(jobs, function (j) { return j.received; });
+    m.cashRecv = sum(receivables, function (x) { return x.paid; });
+    m.cashDeals = sum(deals, function (d) { return d.received; });
+    m.dealCost = sum(deals, function (d) { return d.cost; });
+    m.parts = sum(jobs, function (j) { return j.partsCost; });
+    m.expenses = sum(expenses, function (x) { return x.amount; });
+    m.supplierPaid = sum(tranches, function (t) { return t.paid; });
+    m.cash = m.cashSales + m.cashJobs + m.cashRecv + m.cashDeals
+             - m.parts - m.dealCost - m.expenses - m.supplierPaid;
+
+    var costById = {}, srcById = {};
+    stock.forEach(function (it) {
+      costById[it.id] = num(it.cost);
+      srcById[it.id] = it.source;
+    });
+
+    m.supplierTotal = sum(stock.filter(function (it) {
+      return it.source === "Supplier credit";
+    }), function (it) { return num(it.qty) * num(it.cost); });
+    m.supplierDebt = m.supplierTotal - m.supplierPaid;
+
+    m.openingCapital = sum(stock.filter(isLegacy), function (it) {
+      return num(it.qty) * num(it.cost);
+    });
+
+    m.stockAtCost = sum(stock, function (it) { return leftFor(it) * num(it.cost); });
+    m.expectedCash = sum(stock, function (it) { return leftFor(it) * num(it.price); });
+
+    m.owedSales = sum(sales, function (s) {
+      return Math.max(0, num(s.total) - num(s.received));
+    });
+    m.owedJobs = sum(jobs, function (j) {
+      return Math.max(0, num(j.charge) - num(j.received));
+    });
+    m.owedOther = sum(receivables, function (x) {
+      return Math.max(0, num(x.amount) - num(x.paid));
+    });
+    m.owedDeals = sum(deals, function (d) {
+      return Math.max(0, num(d.price) - num(d.received));
+    });
+    m.dealsBehind = sum(deals, function (d) { return dealStanding(d).behind; });
+    m.owedToYou = m.owedSales + m.owedJobs + m.owedOther + m.owedDeals;
+
+    var legacyProfit = 0, tradeProfit = 0;
+    sales.forEach(function (s) {
+      var g = num(s.total) - costById[s.itemId] * num(s.qty);
+      if (srcById[s.itemId] === "Legacy stock") legacyProfit += g;
+      else tradeProfit += g;
+    });
+    m.capitalRecovered = legacyProfit;
+    m.jobsEarned = sum(jobs, function (j) { return num(j.charge) - num(j.partsCost); });
+    // A hire-purchase deal only earns as the customer pays, never before.
+    m.dealsEarned = sum(deals, function (d) {
+      var price = num(d.price);
+      if (price <= 0) return 0;
+      return (num(d.price) - num(d.cost)) * Math.min(1, num(d.received) / price);
+    });
+    m.tradingProfit = tradeProfit + m.jobsEarned + m.dealsEarned;
+
+    m.netPosition = m.cash + m.stockAtCost + m.owedToYou - m.supplierDebt;
+    m.builtUp = m.netPosition - m.openingCapital;
+
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    m.lastTranche = "";
+    tranches.forEach(function (t) {
+      if (t.dueDate && t.dueDate > m.lastTranche) m.lastTranche = t.dueDate;
+    });
+    m.dueBeforeLast = 0; m.dueAfterLast = 0;
+    function bucket(d, amt) {
+      if (m.lastTranche && d && d <= m.lastTranche) m.dueBeforeLast += amt;
+      else m.dueAfterLast += amt;
+    }
+    sales.forEach(function (s) {
+      var o = Math.max(0, num(s.total) - num(s.received));
+      if (o > 0.5) bucket(s.dueDate, o);
+    });
+    jobs.forEach(function (j) {
+      var o = Math.max(0, num(j.charge) - num(j.received));
+      if (o > 0.5) bucket(j.dueDate, o);
+    });
+    receivables.forEach(function (x) {
+      var o = Math.max(0, num(x.amount) - num(x.paid));
+      if (o > 0.5) bucket(x.dueDate, o);
+    });
+    deals.forEach(function (d) {
+      var st = dealStanding(d);
+      if (st.balance <= 0.5) return;
+      // Each unpaid instalment lands on its own date.
+      var left = st.balance;
+      dealSchedule(d).forEach(function (i) {
+        if (left <= 0) return;
+        var part = Math.min(left, i.amount);
+        if (!i.past) { bucket(i.due, part); left -= part; }
+      });
+      if (left > 0.5) bucket("", left);
+    });
+    m.mustComeFromStock = Math.max(0,
+      m.supplierDebt - m.cash - m.dueBeforeLast);
+    m.shareToSell = m.expectedCash > 0 ? m.mustComeFromStock / m.expectedCash : 0;
+    return m;
+  }
+
+  function ledger(lines) {
+    return '<div class="ledger">' + lines.map(function (l) {
+      if (l.hint) return '<div class="hint">' + l.hint + "</div>";
+      if (l.meter !== undefined) {
+        var pct = Math.max(0, Math.min(100, l.meter * 100));
+        return '<div class="meter"><span class="' + (l.meter > 0.8 ? "hot" : "") +
+          '" style="width:' + pct.toFixed(0) + '%"></span></div>';
+      }
+      return '<div class="line' + (l.total ? " total" : "") + (l.sub ? " sub" : "") + '">' +
+        '<span class="lbl">' + esc(l.label) + "</span>" +
+        '<span class="val num ' + (l.tone || "") + '">' + esc(l.value) + "</span></div>";
+    }).join("") + "</div>";
+  }
+
+  function renderMoney() {
+    var m = money();
+
+    $("cashBlock").innerHTML = ledger([
+      { label: "Cash from goods sold", value: cedi(m.cashSales) },
+      { label: "Cash from repair jobs", value: cedi(m.cashJobs) },
+      { label: "Cash from customers paying off", value: cedi(m.cashRecv) },
+      { label: "Less: parts bought for repairs", value: cedi(-m.parts), tone: m.parts ? "neg" : "" },
+      { label: "Less: running costs", value: cedi(-m.expenses), tone: m.expenses ? "neg" : "" },
+      { label: "Less: paid to the supplier", value: cedi(-m.supplierPaid), tone: m.supplierPaid ? "neg" : "" },
+      { label: "Cash on hand now", value: cedi(m.cash), total: true,
+        tone: m.cash < 0 ? "neg" : "pos" }
+    ]);
+
+    var tr = tranches.slice().sort(function (a, b) {
+      return String(a.dueDate).localeCompare(String(b.dueDate));
+    });
+    var trHtml = tr.length ? tr.map(function (t) {
+      var owing = num(t.amount) - num(t.paid);
+      return '<div class="row"><div class="main">' +
+        '<div class="nm">' + esc(t.label || "Tranche") + "</div>" +
+        '<div class="sub num">due ' + esc(t.dueDate || "no date") +
+        (num(t.paid) ? " · paid " + cedi(t.paid) : "") + "</div></div>" +
+        '<div class="amt num ' + (owing > 0.5 ? "due" : "pos") + '">' +
+        cedi(owing > 0.5 ? owing : 0) + "</div>" +
+        (owing > 0.5 ? '<button class="mini" data-tranche="' + esc(t.id) + '">Pay</button>' : "") +
+        "</div>";
+    }).join("") : '<div class="empty"><strong>No schedule set</strong>Ask Claude to add your tranche dates.</div>';
+
+    $("supplierBlock").innerHTML = trHtml + ledger([
+      { label: "Total taken on credit", value: cedi(m.supplierTotal) },
+      { label: "Paid so far", value: cedi(m.supplierPaid) },
+      { label: "Still owed", value: cedi(m.supplierDebt), total: true,
+        tone: m.supplierDebt > 0 ? "due" : "pos" },
+      { hint: "Can you cover it? Cash on hand plus customer money due by " +
+        esc(m.lastTranche || "the last tranche") + " leaves " +
+        "<b>" + cedi(m.mustComeFromStock) + "</b> to come from selling stock — that is " +
+        "<b>" + (m.shareToSell * 100).toFixed(0) + "%</b> of the " + cedi(m.expectedCash) +
+        " your remaining stock would bring in." },
+      { meter: m.shareToSell }
+    ]);
+
+
+    $("capitalBlock").innerHTML = ledger([
+      { label: "Opening capital (legacy stock at estimated cost)",
+        value: cedi(m.openingCapital) },
+      { label: "Cash on hand", value: cedi(m.cash), sub: true },
+      { label: "Stock on hand at cost", value: cedi(m.stockAtCost), sub: true },
+      { label: "Owed to you by customers", value: cedi(m.owedToYou), sub: true },
+      { label: "Less owed to the supplier", value: cedi(-m.supplierDebt), sub: true },
+      { label: "Your net position today", value: cedi(m.netPosition) },
+      { label: "Built up / (eroded)", value: cedi(m.builtUp), total: true,
+        tone: m.builtUp < 0 ? "neg" : "pos" },
+      { hint: "Trading profit on properly costed stock and repairs: <b>" +
+        cedi(m.tradingProfit) + "</b>. Capital recovered on legacy sales: <b>" +
+        cedi(m.capitalRecovered) + "</b> — kept separate because legacy costs are estimates." }
+    ]);
+
+    var ex = expenses.slice().sort(function (a, b) {
+      return String(b.ts).localeCompare(String(a.ts));
+    });
+    $("expenseList").innerHTML = ex.length ? ex.map(function (x) {
+      return '<div class="row"><div class="main"><div class="nm">' + esc(x.what) + "</div>" +
+        '<div class="sub num">' + esc(String(x.ts || "").slice(0, 10)) + "</div></div>" +
+        '<div class="amt num neg">' + cedi(x.amount) + "</div>" +
+        '<button class="mini" data-exdel="' + esc(x.id) + '">Remove</button></div>';
+    }).join("") : '<div class="empty"><strong>Nothing recorded</strong>' +
+      "Put every cost here — transport, fuel, rent — or the profit figures will flatter you.</div>";
+  }
+
+  function renderJobs() {
+    var el = $("jobList");
+    var list = jobs.filter(function (j) { return inPeriod(j.ts); })
+      .sort(function (a, b) { return String(b.ts).localeCompare(String(a.ts)); });
+    if (!list.length) {
+      el.innerHTML = '<div class="empty"><strong>' +
+        (jobs.length ? "No repairs in this period" : "No repair jobs yet") + "</strong>" +
+        (jobs.length ? "Nothing was fixed " + esc(periodLabel()) + ". Widen the dates above to see more."
+                     : "Use the button above each time you fix a phone.") + "</div>";
+      return;
+    }
+    el.innerHTML = list.map(function (j) {
+      var ch = Number(j.charge) || 0, rec = Number(j.received) || 0;
+      var owes = Math.max(0, ch - rec);
+      var kind = owes > 0.5 ? "credit" : "cash";
+      var today = dayKey(j.ts) === dayKey();
+      return '<div class="row"><div class="main">' +
+        '<div class="nm">' + esc(j.service) +
+          '<span class="pill ' + kind + '">' + (kind === "cash" ? "Paid" : "Credit") + "</span></div>" +
+        '<div class="sub num">' + stampOf(j.ts) +
+          (j.buyer ? " · " + esc(j.buyer) : "") +
+          (custPhone(j) ? " · " + esc(custPhone(j)) : "") +
+          (j.device ? " · " + esc(j.device) : "") +
+          (isOwner && Number(j.partsCost) ? " · parts " + cedi(j.partsCost) : "") +
+          (owes > 0.5 ? " · owes " + cedi(owes) : "") + "</div></div>" +
+        '<div class="amt num">' + cedi(ch) + "</div>" +
+        (custPhone(j) ? '<button class="mini" data-copy="' + esc(custPhone(j)) + '">Copy</button>' : "") +
+        (canWrite !== false && today ? '<button class="mini" data-jundo="' + esc(j.id) + '">Undo</button>' : "") +
+        "</div>";
+    }).join("");
+  }
+
+  function renderServices() {
+    var el = $("serviceList");
+    if (!services.length) {
+      el.innerHTML = '<div class="empty"><strong>No repair jobs listed</strong>' +
+        "Add the ones you do often so your attendant can pick them.</div>";
+      return;
+    }
+    el.innerHTML = services.map(function (s) {
+      return '<div class="row"><div class="main"><div class="nm">' + esc(s.name) + "</div>" +
+        '<div class="sub num">' + (Number(s.typicalCharge)
+          ? "usually " + cedi(s.typicalCharge) : "no usual charge set") + "</div></div>" +
+        '<button class="mini" data-svdel="' + esc(s.id) + '">Remove</button></div>';
+    }).join("");
+  }
+
+  function renderAll() {
+    renderStrip();
+    renderPriceWarn();
+    if (view === "sell") renderGrid();
+    if (view === "today") { renderSalesSummary(); renderToday(); }
+    if (view === "repairs") renderJobs();
+    renderOwedBadge();
+    if (view === "owed") { renderOwedStrip(); renderOwedList(); }
+    if (view === "people") renderPeople();
+    if (view === "money") renderMoney();
+    if (view === "stock") { renderStockSummary(); renderStock(); renderServices(); }
+  }
+
+  /* ---------- sale ---------- */
+
+  function closeSheet() { if (sheetEl) { sheetEl.remove(); sheetEl = null; } }
+
+  function customerOptions() {
+    // The datalist offers numbers, because the number is what identifies a person.
+    return customers.map(function (c) {
+      var p = String(c.phone || "").trim();
+      if (!p) return "";
+      return '<option value="' + esc(p) + '">' + esc(c.name || "") + "</option>";
+    }).join("");
+  }
+
+  /* Number-first customer wiring. Typing a known number fills in the name and
+     shows what that person has bought and still owes. */
+  function wireCustomer(phoneId, nameId, knownId, onChange) {
+    var phoneIn = $(phoneId), nameIn = $(nameId), knownEl = $(knownId);
+    var nameTouched = false;
+
+    nameIn.addEventListener("input", function () {
+      nameTouched = true;
+      if (onChange) onChange();
+    });
+
+    function lookup() {
+      var found = custByPhone(phoneIn.value);
+      if (found) {
+        if (!nameTouched || !nameIn.value.trim()) nameIn.value = found.name || "";
+        var st = custStats(found.id);
+        knownEl.innerHTML = ledger([
+          { label: "Known customer", value: found.name || "no name" },
+          { label: st.count + " purchase" + (st.count === 1 ? "" : "s") +
+                   ", spent " + cedi(st.spent),
+            value: st.owed > 0.5 ? "owes " + cedi(st.owed) : "paid up",
+            sub: true, tone: st.owed > 0.5 ? "due" : "pos" }
+        ]);
+      } else {
+        knownEl.innerHTML = "";
+        if (!nameTouched) nameIn.value = "";
+      }
+      if (onChange) onChange();
+    }
+
+    phoneIn.addEventListener("input", lookup);
+    phoneIn.addEventListener("change", lookup);
+  }
+
+  function openSale(item) {
+    closeSheet();
+    var left = leftFor(item);
+    var floor = Number(item.price) || 0;
+    var payment = "cash";
+
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Record a sale">' +
+        "<h3>" + esc(item.name) + "</h3>" +
+        '<div class="floor"><span>Do not sell below</span><strong class="num">' +
+          (floor ? cedi(floor) : "no price set") + "</strong></div>" +
+        '<div class="field"><label for="s-qty">How many</label>' +
+          '<div class="stepper"><button type="button" id="s-minus" aria-label="One fewer">&minus;</button>' +
+          '<input id="s-qty" type="number" inputmode="numeric" min="1" step="1" value="1">' +
+          '<button type="button" id="s-plus" aria-label="One more">+</button></div></div>' +
+        '<div class="field"><label for="s-price">Selling at, each (&#8373;)</label>' +
+          '<input id="s-price" type="number" inputmode="numeric" step="1" min="' + floor + '" value="' + floor + '"></div>' +
+        '<div class="field"><label>Payment</label><div class="seg">' +
+          '<button type="button" id="s-cash" aria-pressed="true">Paid now</button>' +
+          '<button type="button" id="s-credit" aria-pressed="false">Paying later</button></div></div>' +
+        '<div class="field">' +
+          '<label for="s-phone" id="s-phoneLabel">Customer number (optional)</label>' +
+          '<input id="s-phone" list="s-custlist" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567">' +
+          '<datalist id="s-custlist">' + customerOptions() + "</datalist>" +
+          '<p class="sub-note" id="s-phoneNote">The number is how a customer is recognised next time.</p>' +
+          '<div id="s-known"></div>' +
+          '<label for="s-buyer" id="s-buyerLabel" style="margin-top:12px">Name</label>' +
+          '<input id="s-buyer" type="text" autocomplete="off" placeholder="Who is buying">' +
+        "</div>" +
+        '<div class="field" id="s-creditFields" hidden>' +
+          '<label for="s-paid">Paying now (&#8373;)</label>' +
+          '<input id="s-paid" type="number" inputmode="numeric" min="0" step="1" value="0">' +
+          '<p class="sub-note">A deposit, or 0 if they are paying nothing today.</p>' +
+          '<label for="s-due" style="margin-top:12px">Clearing the rest by</label>' +
+          '<input id="s-due" type="date"></div>' +
+        '<div id="s-flag"></div>' +
+        '<div class="sheet-foot">' +
+          '<div id="s-split"></div>' +
+          '<div class="total"><span>Total</span><strong class="num" id="s-total">₵0</strong></div>' +
+          '<div class="sheet-actions">' +
+            '<button class="act ghost" type="button" id="s-cancel">Cancel</button>' +
+            '<button class="act" type="button" id="s-save">Record sale</button>' +
+          "</div>" +
+        "</div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+
+    var qtyIn = $("s-qty"), priceIn = $("s-price"), buyerIn = $("s-buyer"),
+        paidIn = $("s-paid"), saveBtn = $("s-save"), flagEl = $("s-flag");
+
+    function qty() {
+      return Math.max(1, Math.min(left, Math.floor(Number(qtyIn.value) || 1)));
+    }
+    function price() { return Math.max(0, Number(priceIn.value) || 0); }
+    function deposit() {
+      if (payment === "cash") return qty() * price();
+      return Math.max(0, Math.min(qty() * price(), Number(paidIn.value) || 0));
+    }
+
+    function sync() {
+      if (Number(qtyIn.value) !== qty()) qtyIn.value = qty();
+      var total = qty() * price();
+      $("s-total").textContent = cedi(total);
+
+      if (payment === "credit") {
+        var owing = total - deposit();
+        $("s-split").innerHTML = ledger([
+          { label: "Paying now", value: cedi(deposit()), sub: true },
+          { label: "Still to pay", value: cedi(owing), sub: true, tone: owing > 0.5 ? "due" : "pos" }
+        ]);
+      } else {
+        $("s-split").innerHTML = "";
+      }
+
+      var below = floor > 0 && price() < floor;
+      flagEl.innerHTML = below
+        ? '<div class="flag">' + cedi(floor) + " is the lowest price for this item. Raise it to record the sale.</div>"
+        : "";
+      saveBtn.disabled = below || price() <= 0 ||
+        (payment === "credit" && (!phoneKey($("s-phone").value) || !buyerIn.value.trim()));
+    }
+
+    function setPayment(p) {
+      payment = p;
+      $("s-cash").setAttribute("aria-pressed", p === "cash" ? "true" : "false");
+      $("s-credit").setAttribute("aria-pressed", p === "credit" ? "true" : "false");
+      $("s-creditFields").hidden = p !== "credit";
+      $("s-phoneLabel").textContent = p === "credit"
+        ? "Customer number" : "Customer number (optional)";
+      $("s-phoneNote").textContent = p === "credit"
+        ? "Required on credit — it is how you reach them for the balance."
+        : "The number is how a customer is recognised next time.";
+      sync();
+    }
+    wireCustomer("s-phone", "s-buyer", "s-known", sync);
+
+    $("s-minus").onclick = function () { qtyIn.value = Math.max(1, qty() - 1); sync(); };
+    $("s-plus").onclick = function () { qtyIn.value = Math.min(left, qty() + 1); sync(); };
+    qtyIn.oninput = sync;
+    priceIn.oninput = sync;
+    priceIn.onblur = function () {
+      if (floor > 0 && price() < floor) { priceIn.value = floor; sync(); }
+    };
+    buyerIn.oninput = sync;
+    paidIn.oninput = sync;
+    $("s-cash").onclick = function () { setPayment("cash"); };
+    $("s-credit").onclick = function () { setPayment("credit"); };
+    $("s-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+
+    saveBtn.onclick = function () {
+      var total = qty() * price();
+      var rec = {
+        ts: new Date().toISOString(),
+        itemId: item.id,
+        name: item.name,
+        qty: qty(),
+        unitPrice: price(),
+        total: total,
+        payment: payment,
+        buyer: buyerIn.value.trim(),
+        phone: $("s-phone").value.trim(),
+        customerId: "",
+        received: deposit(),
+        dueDate: payment === "credit" ? ($("s-due").value || "") : ""
+      };
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      if (!db) { toast("Not connected — sale not saved"); closeSheet(); return; }
+      resolveCustomer(rec.buyer, rec.phone).then(function (cid) {
+        rec.customerId = cid;
+        return db.collection("sales").add(rec);
+      }).then(function (ref) {
+        if (payment === "credit" && rec.received > 0) {
+          return logPayment("sale", ref && ref.id, rec.buyer, rec.received);
+        }
+      }).then(function () {
+        closeSheet();
+        toast(rec.qty + " × " + rec.name + " — " + cedi(total));
+      }).catch(function (e) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Record sale";
+        flagEl.innerHTML = '<div class="flag">' + esc(saveProblem(e, "sale")) + "</div>";
+      });
+    };
+
+    setPayment("cash");
+    setTimeout(function () { qtyIn.focus(); qtyIn.select(); }, 30);
+  }
+
+  function openJob() {
+    closeSheet();
+    var payment = "cash";
+
+    var opts = services.map(function (s) {
+      return '<option value="' + esc(s.name) + '"></option>';
+    }).join("");
+
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Record a repair job">' +
+        "<h3>Repair job</h3>" +
+        '<div class="field"><label for="j-service">What did you fix</label>' +
+          '<input id="j-service" list="j-services" autocomplete="off" placeholder="Screen replacement">' +
+          '<datalist id="j-services">' + opts + "</datalist>" +
+          '<p class="sub-note">Pick one or type anything. Repairs have no floor price.</p></div>' +
+        '<div class="field"><label for="j-charge">What you charged (&#8373;)</label>' +
+          '<input id="j-charge" type="number" inputmode="numeric" min="0" step="1"></div>' +
+        '<div class="field"><label for="j-parts">Parts you used (&#8373;)</label>' +
+          '<input id="j-parts" type="number" inputmode="numeric" min="0" step="1" value="0">' +
+          '<p class="sub-note">What the screen, port or battery cost. Put 0 if none.</p></div>' +
+        '<div class="field"><label for="j-device">Phone / customer note</label>' +
+          '<input id="j-device" type="text" autocomplete="off" placeholder="Tecno Spark, cracked screen"></div>' +
+        '<div class="field"><label>Payment</label><div class="seg">' +
+          '<button type="button" id="j-cash" aria-pressed="true">Paid now</button>' +
+          '<button type="button" id="j-credit" aria-pressed="false">Paying later</button></div></div>' +
+        '<div class="field">' +
+          '<label for="j-phone" id="j-phoneLabel">Customer number</label>' +
+          '<input id="j-phone" list="j-custlist" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567">' +
+          '<datalist id="j-custlist">' + customerOptions() + "</datalist>" +
+          '<p class="sub-note" id="j-phoneNote">So you can tell them the phone is ready.</p>' +
+          '<div id="j-known"></div>' +
+          '<label for="j-buyer" id="j-buyerLabel" style="margin-top:12px">Name</label>' +
+          '<input id="j-buyer" type="text" autocomplete="off" placeholder="Whose phone">' +
+        "</div>" +
+        '<div class="field" id="j-creditFields" hidden>' +
+          '<label for="j-paid">Paying now (&#8373;)</label>' +
+          '<input id="j-paid" type="number" inputmode="numeric" min="0" step="1" value="0">' +
+          '<p class="sub-note">A deposit, or 0 if they are paying nothing today.</p>' +
+          '<label for="j-due" style="margin-top:12px">Clearing the rest by</label>' +
+          '<input id="j-due" type="date"></div>' +
+        '<div id="j-flag"></div>' +
+        '<div class="sheet-foot">' +
+          '<div id="j-split"></div>' +
+          '<div class="total"><span>You keep</span><strong class="num" id="j-net">₵0</strong></div>' +
+          '<div class="sheet-actions">' +
+            '<button class="act ghost" type="button" id="j-cancel">Cancel</button>' +
+            '<button class="act" type="button" id="j-save">Record job</button>' +
+          "</div>" +
+        "</div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+
+    var svIn = $("j-service"), chIn = $("j-charge"), ptIn = $("j-parts"),
+        buyerIn = $("j-buyer"), saveBtn = $("j-save"), flagEl = $("j-flag");
+
+    function charge() { return Math.max(0, Number(chIn.value) || 0); }
+    function parts() { return Math.max(0, Number(ptIn.value) || 0); }
+    function deposit() {
+      if (payment === "cash") return charge();
+      return Math.max(0, Math.min(charge(), Number($("j-paid").value) || 0));
+    }
+
+    function sync() {
+      var net = charge() - parts();
+      $("j-net").textContent = cedi(net);
+
+      if (payment === "credit") {
+        var owing = charge() - deposit();
+        $("j-split").innerHTML = ledger([
+          { label: "Paying now", value: cedi(deposit()), sub: true },
+          { label: "Still to pay", value: cedi(owing), sub: true, tone: owing > 0.5 ? "due" : "pos" }
+        ]);
+      } else {
+        $("j-split").innerHTML = "";
+      }
+
+      flagEl.innerHTML = (charge() > 0 && net < 0)
+        ? '<div class="flag">The parts cost more than you charged. Check both figures.</div>'
+        : "";
+      saveBtn.disabled = !svIn.value.trim() || charge() <= 0 ||
+        (payment === "credit" && (!phoneKey($("j-phone").value) || !buyerIn.value.trim()));
+    }
+
+    function setPayment(p) {
+      payment = p;
+      $("j-cash").setAttribute("aria-pressed", p === "cash" ? "true" : "false");
+      $("j-credit").setAttribute("aria-pressed", p === "credit" ? "true" : "false");
+      $("j-creditFields").hidden = p !== "credit";
+      $("j-phoneLabel").textContent = p === "credit"
+        ? "Customer number" : "Customer number (optional)";
+      $("j-phoneNote").textContent = p === "credit"
+        ? "Required on credit — it is how you reach them for the balance."
+        : "So you can tell them the phone is ready.";
+      sync();
+    }
+    wireCustomer("j-phone", "j-buyer", "j-known", sync);
+
+    svIn.oninput = function () {
+      var m = services.filter(function (s) { return s.name === svIn.value; })[0];
+      if (m && Number(m.typicalCharge) && !chIn.value) chIn.value = Number(m.typicalCharge);
+      sync();
+    };
+    chIn.oninput = sync; ptIn.oninput = sync; buyerIn.oninput = sync;
+    $("j-paid").oninput = sync;
+    $("j-cash").onclick = function () { setPayment("cash"); };
+    $("j-credit").onclick = function () { setPayment("credit"); };
+    $("j-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+
+    saveBtn.onclick = function () {
+      var ch = charge();
+      var rec = {
+        ts: new Date().toISOString(),
+        service: svIn.value.trim(),
+        charge: ch,
+        partsCost: parts(),
+        device: $("j-device").value.trim(),
+        payment: payment,
+        buyer: buyerIn.value.trim(),
+        phone: $("j-phone").value.trim(),
+        customerId: "",
+        received: deposit(),
+        dueDate: payment === "credit" ? ($("j-due").value || "") : ""
+      };
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      if (!db) { toast("Not connected — job not saved"); closeSheet(); return; }
+      resolveCustomer(rec.buyer, rec.phone).then(function (cid) {
+        rec.customerId = cid;
+        return db.collection("jobs").add(rec);
+      }).then(function (ref) {
+        if (payment === "credit" && rec.received > 0) {
+          return logPayment("job", ref && ref.id, rec.buyer, rec.received);
+        }
+      }).then(function () {
+        closeSheet();
+        toast(rec.service + " — " + cedi(ch));
+      }).catch(function (e) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Record job";
+        flagEl.innerHTML = '<div class="flag">' + esc(saveProblem(e, "repair")) + "</div>";
+      });
+    };
+
+    setPayment("cash");
+    setTimeout(function () { svIn.focus(); }, 30);
+  }
+
+  /* ---------- customers ---------- */
+
+  /* A phone number is the customer's identity: names repeat, numbers do not.
+     Normalise so 024 123 4567, 0241234567 and +233241234567 are one person. */
+  function phoneKey(p) {
+    var d = String(p || "").replace(/[^0-9]/g, "");
+    if (!d) return "";
+    if (d.indexOf("00233") === 0) d = d.slice(5);
+    if (d.indexOf("233") === 0 && d.length > 9) d = d.slice(3);
+    if (d.length === 9) d = "0" + d;
+    return d;
+  }
+
+  function custById(id) {
+    if (!id) return null;
+    return customers.filter(function (c) { return c.id === id; })[0] || null;
+  }
+  function custByPhone(p) {
+    var k = phoneKey(p);
+    if (!k) return null;
+    return customers.filter(function (c) {
+      return (c.phoneKey || phoneKey(c.phone)) === k;
+    })[0] || null;
+  }
+  /* Only used for walk-ins who gave no number at all. */
+  function custByNameOnly(name) {
+    var n = String(name || "").trim().toLowerCase();
+    if (!n) return null;
+    return customers.filter(function (c) {
+      return !(c.phoneKey || phoneKey(c.phone)) &&
+             String(c.name || "").trim().toLowerCase() === n;
+    })[0] || null;
+  }
+  function custLabel(rec) {
+    var c = custById(rec.customerId);
+    return (c && c.name) || rec.buyer || "Unnamed customer";
+  }
+  function custPhone(rec) {
+    var c = custById(rec.customerId);
+    return (c && c.phone) || rec.phone || "";
+  }
+
+  /* Ensure a customer record exists for this name, and keep the phone current.
+     Resolves the customer id, or "" when no name was given. */
+  function resolveCustomer(name, phone) {
+    name = String(name || "").trim();
+    phone = String(phone || "").trim();
+    var key = phoneKey(phone);
+    if (!db || (!key && !name)) return Promise.resolve("");
+
+    var existing = key ? custByPhone(phone) : custByNameOnly(name);
+    if (existing) {
+      var patch = {};
+      if (name && name !== existing.name) patch.name = name;
+      if (phone && phone !== existing.phone) { patch.phone = phone; patch.phoneKey = key; }
+      if (!existing.phoneKey && key) patch.phoneKey = key;
+      if (!Object.keys(patch).length) return Promise.resolve(existing.id);
+      return db.collection("customers").doc(existing.id).update(patch)
+        .then(function () { return existing.id; })
+        .catch(function () { return existing.id; });
+    }
+    return db.collection("customers").add({
+      name: name, phone: phone, phoneKey: key, note: "",
+      firstSeen: new Date().toISOString().slice(0, 10)
+    }).then(function (ref) { return (ref && ref.id) || ""; })
+      .catch(function () { return ""; });
+  }
+
+  function daysSince(dateStr) {
+    if (!dateStr) return null;
+    var d = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
+    if (isNaN(d)) return null;
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((today - d) / 86400000);
+  }
+
+  /* How long a debt has been outstanding, and whether it is past its date. */
+  function ageOf(rec) {
+    var since = daysSince(String(rec.ts || "").slice(0, 10));
+    var overdue = rec.dueDate ? daysSince(rec.dueDate) : null;
+    return { held: since, overdue: overdue };
+  }
+  function ageText(rec) {
+    var a = ageOf(rec);
+    if (a.overdue !== null && a.overdue > 0) {
+      return a.overdue + " day" + (a.overdue === 1 ? "" : "s") + " overdue";
+    }
+    if (a.overdue !== null && a.overdue <= 0) {
+      var inDays = -a.overdue;
+      return inDays === 0 ? "due today" : "due in " + inDays + " day" + (inDays === 1 ? "" : "s");
+    }
+    if (a.held !== null) {
+      return "owing " + a.held + " day" + (a.held === 1 ? "" : "s") + ", no date set";
+    }
+    return "no date set";
+  }
+
+  /* ---------- hire purchase ---------- */
+
+  function addInterval(dateStr, n, interval) {
+    var d = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
+    if (isNaN(d)) return "";
+    if (interval === "week") d.setDate(d.getDate() + 7 * n);
+    else if (interval === "fortnight") d.setDate(d.getDate() + 14 * n);
+    else d.setMonth(d.getMonth() + n);
+    return ymd(d);
+  }
+
+  /* The instalments a deal expects, each with its date and whether it is due yet. */
+  function dealSchedule(d) {
+    var out = [];
+    var count = Math.max(0, Math.floor(num(d.count)));
+    var today = ymd(new Date());
+    for (var i = 0; i < count; i++) {
+      var due = addInterval(d.startDate, i, d.interval || "month");
+      out.push({ n: i + 1, due: due, amount: num(d.instalment), past: !!due && due <= today });
+    }
+    return out;
+  }
+
+  /* What the customer should have handed over by today, and what is missing. */
+  function dealStanding(d) {
+    var price = num(d.price);
+    var received = num(d.received);
+    var expected = num(d.downPayment);
+    dealSchedule(d).forEach(function (i) { if (i.past) expected += i.amount; });
+    expected = Math.min(expected, price);
+    var sched = dealSchedule(d);
+    var next = null;
+    for (var k = 0; k < sched.length; k++) {
+      if (!sched[k].past) { next = sched[k]; break; }
+    }
+    return {
+      price: price,
+      received: received,
+      balance: Math.max(0, price - received),
+      expected: expected,
+      behind: Math.max(0, expected - received),
+      profit: price - num(d.cost),
+      next: next,
+      settled: price - received <= 0.5
+    };
+  }
+
+  function custStats(id) {
+    var spent = 0, owed = 0, count = 0, last = "", held = null, late = null;
+    function take(total, received, ts, rec) {
+      count += 1;
+      spent += num(total);
+      var o = Math.max(0, num(total) - num(received));
+      owed += o;
+      if (String(ts) > last) last = String(ts);
+      if (o > 0.5) {
+        var a = ageOf(rec);
+        // how long they have owed it, and how far past the agreed date
+        if (a.held !== null && (held === null || a.held > held)) held = a.held;
+        if (a.overdue !== null && a.overdue > 0 &&
+            (late === null || a.overdue > late)) late = a.overdue;
+      }
+    }
+    sales.forEach(function (s) {
+      if (s.customerId === id) take(s.total, s.received, s.ts, s);
+    });
+    jobs.forEach(function (j) {
+      if (j.customerId === id) take(j.charge, j.received, j.ts, j);
+    });
+    return { spent: spent, owed: owed, count: count, last: last, held: held, late: late };
+  }
+
+  function logPayment(refType, refId, who, amount) {
+    if (!db || !(amount > 0)) return Promise.resolve();
+    return db.collection("payments").add({
+      ts: new Date().toISOString(),
+      refType: refType, refId: refId,
+      who: who || "", amount: amount
+    }).catch(function () { /* the balance is already correct; the log is a convenience */ });
+  }
+
+  function historyFor(refType, refId) {
+    return payments.filter(function (p) {
+      return p.refType === refType && p.refId === refId;
+    }).sort(function (a, b) { return String(a.ts).localeCompare(String(b.ts)); });
+  }
+
+  function openDeal() {
+    closeSheet();
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="New hire purchase">' +
+        "<h3>Phone on hire purchase</h3>" +
+        '<div class="field">' +
+          '<label for="d-phone">Customer number</label>' +
+          '<input id="d-phone" list="d-custlist" type="tel" inputmode="tel" autocomplete="off" placeholder="024 123 4567">' +
+          '<datalist id="d-custlist">' + customerOptions() + "</datalist>" +
+          '<div id="d-known"></div>' +
+          '<label for="d-buyer" style="margin-top:12px">Name</label>' +
+          '<input id="d-buyer" type="text" autocomplete="off" placeholder="Who is taking it">' +
+        "</div>" +
+        '<div class="field"><label for="d-device">Phone</label>' +
+          '<input id="d-device" type="text" autocomplete="off" placeholder="Samsung A17"></div>' +
+        '<div class="field"><label for="d-cost">What the phone cost you (&#8373;)</label>' +
+          '<input id="d-cost" type="number" inputmode="numeric" min="0" step="1"></div>' +
+        '<div class="field"><label for="d-price">Agreed price to the customer (&#8373;)</label>' +
+          '<input id="d-price" type="number" inputmode="numeric" min="0" step="1"></div>' +
+        '<div class="field"><label for="d-down">Down payment taken now (&#8373;)</label>' +
+          '<input id="d-down" type="number" inputmode="numeric" min="0" step="1" value="0"></div>' +
+        '<div class="field"><label>Then paying</label><div class="seg">' +
+          '<button type="button" id="d-week" aria-pressed="false">Weekly</button>' +
+          '<button type="button" id="d-fort" aria-pressed="false">Every 2 weeks</button>' +
+          '<button type="button" id="d-month" aria-pressed="true">Monthly</button>' +
+        "</div></div>" +
+        '<div class="field"><label for="d-count">How many instalments</label>' +
+          '<input id="d-count" type="number" inputmode="numeric" min="1" step="1" value="3"></div>' +
+        '<div class="field"><label for="d-start">First instalment due</label>' +
+          '<input id="d-start" type="date"></div>' +
+        '<div id="d-flag"></div>' +
+        '<div class="sheet-foot">' +
+          '<div id="d-split"></div>' +
+          '<div class="total"><span>Each instalment</span><strong class="num" id="d-each">\u20B50</strong></div>' +
+          '<div class="sheet-actions">' +
+            '<button class="act ghost" type="button" id="d-cancel">Cancel</button>' +
+            '<button class="act" type="button" id="d-save">Record deal</button>' +
+          "</div>" +
+        "</div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+
+    var interval = "month";
+    var buyerIn = $("d-buyer"), saveBtn = $("d-save"), flagEl = $("d-flag");
+
+    // default the first instalment to a month from today
+    var t = new Date();
+    $("d-start").value = addInterval(ymd(t), 1, "month");
+
+    function price() { return Math.max(0, Number($("d-price").value) || 0); }
+    function cost() { return Math.max(0, Number($("d-cost").value) || 0); }
+    function down() { return Math.max(0, Math.min(price(), Number($("d-down").value) || 0)); }
+    function count() { return Math.max(1, Math.floor(Number($("d-count").value) || 1)); }
+
+    function sync() {
+      var owing = Math.max(0, price() - down());
+      var each = count() > 0 ? Math.round(owing / count()) : 0;
+      $("d-each").textContent = cedi(each);
+      $("d-split").innerHTML = ledger([
+        { label: "Down payment", value: cedi(down()), sub: true },
+        { label: "Spread over " + count() + " payments", value: cedi(owing), sub: true },
+        isOwner ? { label: "You earn over the deal", value: cedi(price() - cost()), sub: true,
+                    tone: price() - cost() < 0 ? "neg" : "pos" } : { label: "", value: "" }
+      ].filter(function (l) { return l.label; }));
+
+      var warn = "";
+      if (price() > 0 && cost() > 0 && price() <= cost()) {
+        warn = "The agreed price is not above what the phone cost you. This deal loses money.";
+      }
+      flagEl.innerHTML = warn ? '<div class="flag">' + warn + "</div>" : "";
+      saveBtn.disabled = !phoneKey($("d-phone").value) || !buyerIn.value.trim() ||
+        !$("d-device").value.trim() || price() <= 0 || !$("d-start").value;
+    }
+
+    function setInterval_(iv) {
+      interval = iv;
+      $("d-week").setAttribute("aria-pressed", iv === "week" ? "true" : "false");
+      $("d-fort").setAttribute("aria-pressed", iv === "fortnight" ? "true" : "false");
+      $("d-month").setAttribute("aria-pressed", iv === "month" ? "true" : "false");
+      $("d-start").value = addInterval(ymd(new Date()), 1, iv);
+      sync();
+    }
+    $("d-week").onclick = function () { setInterval_("week"); };
+    $("d-fort").onclick = function () { setInterval_("fortnight"); };
+    $("d-month").onclick = function () { setInterval_("month"); };
+
+    ["d-price", "d-cost", "d-down", "d-count", "d-device", "d-start"].forEach(function (id) {
+      $(id).addEventListener("input", sync);
+    });
+    wireCustomer("d-phone", "d-buyer", "d-known", sync);
+    $("d-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+
+    saveBtn.onclick = function () {
+      var owing = Math.max(0, price() - down());
+      var rec = {
+        ts: new Date().toISOString(),
+        device: $("d-device").value.trim(),
+        buyer: buyerIn.value.trim(),
+        phone: $("d-phone").value.trim(),
+        customerId: "",
+        cost: cost(),
+        price: price(),
+        downPayment: down(),
+        received: down(),
+        instalment: count() > 0 ? Math.round(owing / count()) : 0,
+        count: count(),
+        interval: interval,
+        startDate: $("d-start").value
+      };
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving\u2026";
+      if (!db) { toast("Not connected"); closeSheet(); return; }
+      resolveCustomer(rec.buyer, rec.phone).then(function (cid) {
+        rec.customerId = cid;
+        return db.collection("deals").add(rec);
+      }).then(function (ref) {
+        if (rec.downPayment > 0) {
+          return logPayment("deal", ref && ref.id, rec.buyer, rec.downPayment);
+        }
+      }).then(function () {
+        closeSheet();
+        toast(rec.device + " \u2014 " + cedi(rec.price) + " over " + rec.count + " payments");
+      }).catch(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Record deal";
+        flagEl.innerHTML = '<div class="flag">Could not save. Try again.</div>';
+      });
+    };
+
+    sync();
+    setTimeout(function () { $("d-phone").focus(); }, 30);
+  }
+
+  function openDealPayment(d) {
+    closeSheet();
+    var st = dealStanding(d);
+    var hist = historyFor("deal", d.id);
+    var sched = dealSchedule(d).map(function (i) {
+      return { label: "Instalment " + i.n + " \u00b7 " + i.due, value: cedi(i.amount),
+               sub: true, tone: i.past ? "due" : "" };
+    });
+
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Hire purchase payment">' +
+        "<h3>" + esc(custLabel(d)) + "</h3>" +
+        '<p class="hint">' + esc(d.device || "Phone") + " \u00b7 " + cedi(st.price) + " agreed</p>" +
+        ledger([
+          { label: "Paid so far", value: cedi(st.received), tone: "pos" },
+          { label: "Balance", value: cedi(st.balance), tone: st.balance > 0.5 ? "due" : "pos" }
+        ].concat(st.behind > 0.5
+          ? [{ label: "Behind schedule by", value: cedi(st.behind), tone: "neg" }] : [])
+         .concat(sched)) +
+        (hist.length ? ledger([{ label: "Payments received", value: String(hist.length) }].concat(
+          hist.map(function (p) {
+            return { label: String(p.ts || "").slice(0, 10), value: cedi(p.amount), sub: true };
+          }))) : "") +
+        '<div class="field"><label for="dp-amt">Paying now (&#8373;)</label>' +
+          '<input id="dp-amt" type="number" inputmode="numeric" min="0" step="1" value="' +
+          Math.round(Math.min(st.balance, num(d.instalment) || st.balance)) + '"></div>' +
+        '<div id="dp-split"></div>' +
+        '<div id="dp-flag"></div>' +
+        '<div class="sheet-foot">' +
+          '<div class="sheet-actions">' +
+            '<button class="act ghost" type="button" id="dp-cancel">Cancel</button>' +
+            '<button class="act" type="button" id="dp-save">Record payment</button>' +
+          "</div>" +
+        "</div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+
+    var amtIn = $("dp-amt");
+    function sync() {
+      var add = Math.max(0, Math.min(st.balance, Number(amtIn.value) || 0));
+      var after = st.balance - add;
+      $("dp-split").innerHTML = ledger([
+        { label: "Balance after this", value: cedi(after),
+          tone: after > 0.5 ? "due" : "pos" }
+      ]);
+      $("dp-save").disabled = !(add > 0);
+    }
+    amtIn.oninput = sync;
+    sync();
+
+    $("dp-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+    $("dp-save").onclick = function () {
+      var add = Math.max(0, Math.min(st.balance, Number(amtIn.value) || 0));
+      var btn = $("dp-save");
+      btn.disabled = true; btn.textContent = "Saving\u2026";
+      sb.rpc("record_deal_payment", { p_deal: d.id, p_amount: add })
+        .then(function (r) { if (r.error) throw r.error; return refresh("deals"); })
+        .then(function () { return refresh("payments"); })
+        .then(function () { closeSheet(); toast("Payment of " + cedi(add) + " recorded"); })
+        .catch(function () {
+          btn.disabled = false; btn.textContent = "Record payment";
+          $("dp-flag").innerHTML = '<div class="flag">Could not save. Try again.</div>';
+        });
+    };
+  }
+
+  function openPayment(sale) {
+    closeSheet();
+    var refType = sale._job ? "job" : "sale";
+    var total = Number(sale.total) || 0;
+    var paid = Number(sale.received) || 0;
+    var owes = total - paid;
+    var hist = historyFor(refType, sale.id);
+
+    var histHtml = hist.length
+      ? ledger([{ label: "Payments so far", value: cedi(paid) }].concat(
+          hist.map(function (p) {
+            return { label: esc(String(p.ts || "").slice(0, 10)),
+                     value: cedi(p.amount), sub: true };
+          })))
+      : "";
+
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Record a payment">' +
+        "<h3>" + esc(sale.buyer || "Customer") + "</h3>" +
+        '<p class="hint">' + esc(sale.name || "") + " · " + cedi(total) + " in total</p>" +
+        histHtml +
+        '<div class="floor"><span>Still owing</span><strong class="num">' + cedi(owes) + "</strong></div>" +
+        '<div class="field"><label for="p-amt">Paying now (&#8373;)</label>' +
+          '<input id="p-amt" type="number" inputmode="numeric" min="0" step="1" value="' +
+          Math.round(owes) + '">' +
+          '<p class="sub-note">Part payment is fine — record whatever they hand over.</p></div>' +
+        '<div id="p-split"></div>' +
+        '<div id="p-flag"></div>' +
+        '<div class="sheet-foot">' +
+          '<div class="sheet-actions">' +
+            '<button class="act ghost" type="button" id="p-cancel">Cancel</button>' +
+            '<button class="act" type="button" id="p-save">Record payment</button>' +
+          "</div>" +
+        "</div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+
+    var amtIn = $("p-amt");
+    function sync() {
+      var add = Math.max(0, Math.min(owes, Number(amtIn.value) || 0));
+      var after = owes - add;
+      $("p-split").innerHTML = ledger([
+        { label: "Owing after this", value: cedi(after),
+          tone: after > 0.5 ? "due" : "pos" }
+      ]);
+      $("p-save").disabled = !(add > 0);
+    }
+    amtIn.oninput = sync;
+    sync();
+
+    $("p-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+    $("p-save").onclick = function () {
+      var add = Math.max(0, Math.min(owes, Number(amtIn.value) || 0));
+      var next = Math.min(total, paid + add);
+      var btn = $("p-save");
+      btn.disabled = true; btn.textContent = "Saving…";
+      if (!db) { toast("Not connected"); closeSheet(); return; }
+      db.collection(refType === "job" ? "jobs" : "sales").doc(sale.id)
+        .update({ received: next }).then(function () {
+          return logPayment(refType, sale.id, sale.buyer, add);
+        }).then(function () {
+          closeSheet();
+          toast("Payment of " + cedi(add) + " recorded");
+        }).catch(function () {
+          btn.disabled = false; btn.textContent = "Record payment";
+          $("p-flag").innerHTML = '<div class="flag">Could not save. Try again.</div>';
+        });
+    };
+  }
+
+  function openPrice(item) {
+    closeSheet();
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Change the floor price">' +
+        "<h3>" + esc(item.name) + "</h3>" +
+        '<div class="floor"><span>It cost you</span><strong class="num">' + cedi(item.cost) + "</strong></div>" +
+        '<div class="field"><label for="e-price">Lowest selling price (&#8373;)</label>' +
+          '<input id="e-price" type="number" inputmode="numeric" min="0" step="1" value="' +
+          (Number(item.price) || 0) + '"></div>' +
+        '<div id="e-flag"></div>' +
+        '<div class="sheet-actions">' +
+          '<button class="act ghost" type="button" id="e-cancel">Cancel</button>' +
+          '<button class="act" type="button" id="e-save">Save price</button>' +
+        "</div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+    $("e-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+    $("e-price").oninput = function () {
+      var v = Number($("e-price").value) || 0;
+      $("e-flag").innerHTML = (v > 0 && v < (Number(item.cost) || 0))
+        ? '<div class="flag">That is below what the item cost you. Every sale at this price loses money.</div>'
+        : "";
+    };
+    $("e-save").onclick = function () {
+      var v = Math.max(0, Number($("e-price").value) || 0);
+      var btn = $("e-save");
+      btn.disabled = true; btn.textContent = "Saving…";
+      db.collection("stock").doc(item.id).update({ price: v }).then(function () {
+        closeSheet(); toast(item.name + " floor set to " + cedi(v));
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = "Save price";
+        $("e-flag").innerHTML = '<div class="flag">Could not save. Try again.</div>';
+      });
+    };
+  }
+
+  /* ---------- CSV ---------- */
+
+  function csvCell(v) {
+    var s = String(v == null ? "" : v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function buildCsv() {
+    var head = ["Date", "Type", "Item or Job", "Qty", "Unit Price", "Value",
+                "Parts Cost", "Payment", "Cash Received", "Still Owed",
+                "Customer", "Paying By", "Note"];
+    var rows = [];
+    sales.forEach(function (s) {
+      var tot = Number(s.total) || 0, rec = Number(s.received) || 0;
+      rows.push({ ts: String(s.ts || ""), cells: [
+        String(s.ts || "").slice(0, 10), "Goods", s.name || "",
+        Number(s.qty) || 0, Number(s.unitPrice) || 0, tot, 0,
+        tot - rec > 0.5 ? "Credit" : "Cash", rec, Math.max(0, tot - rec),
+        s.buyer || "", s.dueDate || "", ""
+      ] });
+    });
+    jobs.forEach(function (j) {
+      var ch = Number(j.charge) || 0, rec = Number(j.received) || 0;
+      rows.push({ ts: String(j.ts || ""), cells: [
+        String(j.ts || "").slice(0, 10), "Repair", j.service || "",
+        1, ch, ch, Number(j.partsCost) || 0,
+        ch - rec > 0.5 ? "Credit" : "Cash", rec, Math.max(0, ch - rec),
+        j.buyer || "", j.dueDate || "", j.device || ""
+      ] });
+    });
+    rows.sort(function (a, b) { return a.ts.localeCompare(b.ts); });
+    return [head.join(",")]
+      .concat(rows.map(function (r) { return r.cells.map(csvCell).join(","); }))
+      .join("\r\n");
+  }
+
+  /* ---------- events ---------- */
+
+  $("tabs").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-view]");
+    if (!b) return;
+    view = b.dataset.view;
+    Array.prototype.forEach.call($("tabs").children, function (x) {
+      x.setAttribute("aria-selected", x === b ? "true" : "false");
+    });
+    ["sell", "today", "repairs", "owed", "people", "money", "stock"].forEach(function (v) {
+      $("view-" + v).hidden = v !== view;
+    });
+    renderAll();
+  });
+
+  $("grid").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-id]");
+    if (!b) return;
+    var it = stock.filter(function (x) { return x.id === b.dataset.id; })[0];
+    if (it) openSale(it);
+  });
+
+  $("repairCta").addEventListener("click", openJob);
+  $("hpCta").addEventListener("click", openDeal);
+
+  $("owedList").addEventListener("click", function (e) {
+    var head = e.target.closest("button[data-open]");
+    if (head) {
+      var key = head.dataset.open;
+      owedOpen[key] = !owedOpen[key];
+      renderOwedList();
+      return;
+    }
+    var dp = e.target.closest("button[data-dealpay]");
+    if (dp) {
+      var d = deals.filter(function (x) { return x.id === dp.dataset.dealpay; })[0];
+      if (d) openDealPayment(d);
+      return;
+    }
+    var rp = e.target.closest("button[data-recvpay]");
+    if (rp) {
+      var rx = receivables.filter(function (y) { return y.id === rp.dataset.recvpay; })[0];
+      if (rx) {
+        openAmount(rx.name, "", num(rx.amount) - num(rx.paid), function (amt) {
+          return db.collection("receivables").doc(rx.id)
+            .update({ paid: Math.min(num(rx.amount), num(rx.paid) + amt) })
+            .then(function () { return logPayment("receivable", rx.id, rx.name, amt); });
+        });
+      }
+      return;
+    }
+    var b = e.target.closest("button[data-pay]");
+    if (!b) return;
+    var row = owedSales().filter(function (x) { return x.id === b.dataset.pay; })[0];
+    if (row) openPayment(row);
+  });
+
+  $("todayList").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-undo]");
+    if (!b) return;
+    if (b.dataset.armed !== "1") {
+      b.dataset.armed = "1"; b.textContent = "Sure?";
+      setTimeout(function () { b.dataset.armed = ""; b.textContent = "Undo"; }, 3500);
+      return;
+    }
+    db && db.collection("sales").doc(b.dataset.undo).delete()
+      .then(function () { toast("Sale removed"); })
+      .catch(function () { toast("Could not remove that sale"); });
+  });
+
+  $("stockList").addEventListener("click", function (e) {
+    var ed = e.target.closest("button[data-edit]");
+    if (ed) {
+      var it = stock.filter(function (x) { return x.id === ed.dataset.edit; })[0];
+      if (it) openPrice(it);
+      return;
+    }
+    var b = e.target.closest("button[data-del]");
+    if (!b) return;
+    if (b.dataset.armed !== "1") {
+      b.dataset.armed = "1"; b.textContent = "Sure?";
+      setTimeout(function () { b.dataset.armed = ""; b.textContent = "Remove"; }, 3500);
+      return;
+    }
+    db && db.collection("stock").doc(b.dataset.del).delete()
+      .then(function () { toast("Item removed"); })
+      .catch(function () { toast("Could not remove that item"); });
+  });
+
+  $("owedSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-owed]");
+    if (!b) return;
+    owedView = b.dataset.owed;
+    Array.prototype.forEach.call($("owedSeg").children, function (x) {
+      x.setAttribute("aria-pressed", x === b ? "true" : "false");
+    });
+    renderOwedList();
+  });
+
+  $("owedSearch").addEventListener("input", renderOwedList);
+  $("repairCta2").addEventListener("click", openJob);
+
+  $("jobList").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-jundo]");
+    if (!b) return;
+    if (b.dataset.armed !== "1") {
+      b.dataset.armed = "1"; b.textContent = "Sure?";
+      setTimeout(function () { b.dataset.armed = ""; b.textContent = "Undo"; }, 3500);
+      return;
+    }
+    db && db.collection("jobs").doc(b.dataset.jundo).delete()
+      .then(function () { toast("Job removed"); })
+      .catch(function () { toast("Could not remove that job"); });
+  });
+
+  $("serviceList").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-svdel]");
+    if (!b) return;
+    if (b.dataset.armed !== "1") {
+      b.dataset.armed = "1"; b.textContent = "Sure?";
+      setTimeout(function () { b.dataset.armed = ""; b.textContent = "Remove"; }, 3500);
+      return;
+    }
+    db && db.collection("services").doc(b.dataset.svdel).delete()
+      .then(function () { toast("Removed"); })
+      .catch(function () { toast("Could not remove that"); });
+  });
+
+  function openAmount(title, subtitle, max, onSave) {
+    closeSheet();
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(title) + '">' +
+        "<h3>" + esc(title) + "</h3>" +
+        '<div class="floor"><span>Outstanding</span><strong class="num">' + cedi(max) + "</strong></div>" +
+        (subtitle ? '<p class="hint">' + esc(subtitle) + "</p>" : "") +
+        '<div class="field"><label for="a-amt">Amount (&#8373;)</label>' +
+          '<input id="a-amt" type="number" inputmode="numeric" min="0" step="1" value="' +
+          Math.round(max) + '"></div>' +
+        '<div id="a-flag"></div>' +
+        '<div class="sheet-actions">' +
+          '<button class="act ghost" type="button" id="a-cancel">Cancel</button>' +
+          '<button class="act" type="button" id="a-save">Record</button>' +
+        "</div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+    $("a-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+    $("a-save").onclick = function () {
+      var amt = Math.max(0, Number($("a-amt").value) || 0);
+      var btn = $("a-save");
+      btn.disabled = true; btn.textContent = "Saving…";
+      onSave(amt).then(function () {
+        closeSheet(); toast(cedi(amt) + " recorded");
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = "Record";
+        $("a-flag").innerHTML = '<div class="flag">Could not save. Try again.</div>';
+      });
+    };
+  }
+
+  $("supplierBlock").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-tranche]");
+    if (!b) return;
+    var t = tranches.filter(function (x) { return x.id === b.dataset.tranche; })[0];
+    if (!t || !db) return;
+    openAmount(t.label || "Tranche", "Paying the supplier reduces your cash on hand.",
+      num(t.amount) - num(t.paid), function (amt) {
+        return db.collection("tranches").doc(t.id)
+          .update({ paid: Math.min(num(t.amount), num(t.paid) + amt) })
+          .then(function () {
+            return logPayment("tranche", t.id, t.label || "Tranche", amt);
+          });
+      });
+  });
+
+  $("expenseList").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-exdel]");
+    if (!b) return;
+    if (b.dataset.armed !== "1") {
+      b.dataset.armed = "1"; b.textContent = "Sure?";
+      setTimeout(function () { b.dataset.armed = ""; b.textContent = "Remove"; }, 3500);
+      return;
+    }
+    db && db.collection("expenses").doc(b.dataset.exdel).delete()
+      .then(function () { toast("Removed"); })
+      .catch(function () { toast("Could not remove that"); });
+  });
+
+  function openStockItem() {
+    closeSheet();
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Add an item">' +
+        "<h3>Add an item</h3>" +
+        '<div class="field"><label for="f-name">Item name</label>' +
+          '<input id="f-name" type="text" autocomplete="off" placeholder="Air fryer 8L">' +
+          '<p class="sub-note">Spell it the way it should read on the sell screen. Sales are matched to this name.</p></div>' +
+        '<div class="field"><label for="f-qty">How many you have</label>' +
+          '<input id="f-qty" type="number" min="1" step="1" inputmode="numeric" placeholder="4"></div>' +
+        '<div class="field"><label for="f-cost">What it cost you, each (&#8373;)</label>' +
+          '<input id="f-cost" type="number" min="0" step="1" inputmode="numeric" placeholder="280"></div>' +
+        '<div class="field"><label for="f-price">Lowest selling price (&#8373;)</label>' +
+          '<input id="f-price" type="number" min="0" step="1" inputmode="numeric" placeholder="380">' +
+          '<p class="sub-note">Your attendant will not be able to sell below this.</p></div>' +
+        '<div class="field"><label for="f-source">Whose stock</label>' +
+          '<input list="sources" id="f-source" value="Own stock">' +
+          '<datalist id="sources">' +
+            '<option value="Own stock"></option>' +
+            '<option value="Supplier credit"></option>' +
+            '<option value="Legacy stock"></option>' +
+          "</datalist>" +
+          '<p class="sub-note">Supplier credit counts towards the debt. Own stock is bought with your own money.</p></div>' +
+        '<div id="f-flag"></div>' +
+        '<div class="sheet-foot">' +
+          '<div id="f-split"></div>' +
+          '<div class="sheet-actions">' +
+            '<button class="act ghost" type="button" id="f-cancel">Cancel</button>' +
+            '<button class="act" type="button" id="f-save">Add to counter</button>' +
+          "</div>" +
+        "</div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+
+    function cost() { return Math.max(0, Number($("f-cost").value) || 0); }
+    function price() { return Math.max(0, Number($("f-price").value) || 0); }
+    function qty() { return Math.max(0, Math.floor(Number($("f-qty").value) || 0)); }
+
+    function sync() {
+      var lines = [];
+      if (cost() > 0 && price() > 0) {
+        lines.push({ label: "Margin each", value: cedi(price() - cost()), sub: true,
+                     tone: price() - cost() < 0 ? "neg" : "pos" });
+      }
+      if (qty() > 0 && cost() > 0) {
+        lines.push({ label: qty() + " units cost you", value: cedi(qty() * cost()), sub: true });
+      }
+      $("f-split").innerHTML = lines.length ? ledger(lines) : "";
+      $("f-flag").innerHTML = (cost() > 0 && price() > 0 && price() < cost())
+        ? '<div class="flag">The lowest price is under what it cost you. Every sale at that price loses money.</div>'
+        : "";
+      $("f-save").disabled = !$("f-name").value.trim() || qty() < 1;
+    }
+    ["f-name", "f-qty", "f-cost", "f-price"].forEach(function (id) {
+      $(id).addEventListener("input", sync);
+    });
+
+    $("f-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+    $("f-save").onclick = function () {
+      var name = $("f-name").value.trim();
+      var btn = $("f-save");
+      btn.disabled = true; btn.textContent = "Saving\u2026";
+      if (!db) { toast("Not connected"); closeSheet(); return; }
+      db.collection("stock").add({
+        name: name, qty: qty(), cost: cost(), price: price(),
+        source: $("f-source").value.trim() || "Own stock",
+        order: Date.now()
+      }).then(function () {
+        closeSheet(); toast(name + " added");
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = "Add to counter";
+        $("f-flag").innerHTML = '<div class="flag">Could not add that item. Try again.</div>';
+      });
+    };
+    sync();
+    setTimeout(function () { $("f-name").focus(); }, 30);
+  }
+
+  function openService() {
+    closeSheet();
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Add a repair job">' +
+        "<h3>Add a repair job</h3>" +
+        '<div class="field"><label for="sv-name">Job name</label>' +
+          '<input id="sv-name" type="text" autocomplete="off" placeholder="Charging port replacement"></div>' +
+        '<div class="field"><label for="sv-charge">Usual charge (&#8373;)</label>' +
+          '<input id="sv-charge" type="number" min="0" step="1" inputmode="numeric" placeholder="120">' +
+          '<p class="sub-note">A guide that fills in when the job is picked. Not a floor \u2014 it can be changed per job.</p></div>' +
+        '<div id="sv-flag"></div>' +
+        '<div class="sheet-foot"><div class="sheet-actions">' +
+          '<button class="act ghost" type="button" id="sv-cancel">Cancel</button>' +
+          '<button class="act" type="button" id="sv-save">Add repair job</button>' +
+        "</div></div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+
+    $("sv-name").addEventListener("input", function () {
+      $("sv-save").disabled = !$("sv-name").value.trim();
+    });
+    $("sv-save").disabled = true;
+    $("sv-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+    $("sv-save").onclick = function () {
+      var name = $("sv-name").value.trim();
+      var btn = $("sv-save");
+      btn.disabled = true; btn.textContent = "Saving\u2026";
+      if (!db) { toast("Not connected"); closeSheet(); return; }
+      db.collection("services").add({
+        name: name,
+        typicalCharge: Number($("sv-charge").value) || 0,
+        order: Date.now()
+      }).then(function () {
+        closeSheet(); toast(name + " added");
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = "Add repair job";
+        $("sv-flag").innerHTML = '<div class="flag">Could not add that. Try again.</div>';
+      });
+    };
+    setTimeout(function () { $("sv-name").focus(); }, 30);
+  }
+
+  $("addItemCta").addEventListener("click", openStockItem);
+  $("addServiceCta").addEventListener("click", openService);
+
+  $("stockSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-stock]");
+    if (!b) return;
+    Array.prototype.forEach.call($("stockSeg").children, function (x) {
+      x.setAttribute("aria-pressed", x === b ? "true" : "false");
+    });
+    $("stock-items").hidden = b.dataset.stock !== "items";
+    $("stock-services").hidden = b.dataset.stock !== "services";
+  });
+
+  function openCost() {
+    closeSheet();
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Record a cost">' +
+        "<h3>Money going out</h3>" +
+        '<div class="field"><label for="ex-what">What was it for</label>' +
+          '<input id="ex-what" type="text" autocomplete="off" placeholder="Transport, fuel, rent"></div>' +
+        '<div class="field"><label for="ex-amount">Amount (&#8373;)</label>' +
+          '<input id="ex-amount" type="number" min="0" step="1" inputmode="numeric" placeholder="500"></div>' +
+        '<div class="field"><label for="ex-date">Date</label>' +
+          '<input id="ex-date" type="date"></div>' +
+        '<div id="ex-flag"></div>' +
+        '<div class="sheet-foot"><div class="sheet-actions">' +
+          '<button class="act ghost" type="button" id="ex-cancel">Cancel</button>' +
+          '<button class="act" type="button" id="ex-save">Record it</button>' +
+        "</div></div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+    $("ex-date").value = ymd(new Date());
+
+    function sync() {
+      $("ex-save").disabled = !$("ex-what").value.trim() ||
+        !(Number($("ex-amount").value) > 0);
+    }
+    ["ex-what", "ex-amount"].forEach(function (id) {
+      $(id).addEventListener("input", sync);
+    });
+    sync();
+
+    $("ex-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+    $("ex-save").onclick = function () {
+      var what = $("ex-what").value.trim();
+      var amount = Number($("ex-amount").value) || 0;
+      var btn = $("ex-save");
+      btn.disabled = true; btn.textContent = "Saving\u2026";
+      if (!db) { toast("Not connected"); closeSheet(); return; }
+      db.collection("expenses").add({
+        what: what, amount: amount,
+        ts: $("ex-date").value || ymd(new Date())
+      }).then(function () {
+        closeSheet(); toast(what + " recorded");
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = "Record it";
+        $("ex-flag").innerHTML = '<div class="flag">Could not record that. Try again.</div>';
+      });
+    };
+    setTimeout(function () { $("ex-what").focus(); }, 30);
+  }
+
+  $("addCostCta").addEventListener("click", openCost);
+
+  $("moneySeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-money]");
+    if (!b) return;
+    Array.prototype.forEach.call($("moneySeg").children, function (x) {
+      x.setAttribute("aria-pressed", x === b ? "true" : "false");
+    });
+    ["position", "supplier", "costs"].forEach(function (v) {
+      $("money-" + v).hidden = b.dataset.money !== v;
+    });
+  });
+
+  $("csvBtn").addEventListener("click", function () {
+    if (!sales.length && !jobs.length) { toast("Nothing to export yet"); return; }
+    try {
+      var blob = new Blob([buildCsv()], { type: "text/csv;charset=utf-8" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "shop-sales.csv";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      toast("Sales CSV saved");
+    } catch (e) { toast("Could not save the CSV"); }
+  });
+
+  function savePeriod() {
+    try { localStorage.setItem("counter.period", JSON.stringify(period)); }
+    catch (e) { /* remembering the filter is optional */ }
+  }
+
+  function applyPeriodUI() {
+    Array.prototype.forEach.call($("periodSeg").children, function (b) {
+      b.setAttribute("aria-pressed", b.dataset.period === period.mode ? "true" : "false");
+    });
+    $("dateRange").hidden = period.mode !== "custom";
+    if (period.from) $("pFrom").value = period.from;
+    if (period.to) $("pTo").value = period.to;
+    var note = $("periodNote");
+    if (note) {
+      note.textContent = "Showing " + periodLabel() + ".";
+    }
+  }
+
+  $("periodSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-period]");
+    if (!b) return;
+    period.mode = b.dataset.period;
+    if (period.mode === "custom") {
+      var t = new Date();
+      if (!period.from) period.from = ymd(new Date(t.getFullYear(), t.getMonth(), 1));
+      if (!period.to) period.to = ymd(t);
+    }
+    savePeriod();
+    applyPeriodUI();
+    renderAll();
+  });
+
+  ["pFrom", "pTo"].forEach(function (id) {
+    $(id).addEventListener("change", function () {
+      period.mode = "custom";
+      period.from = $("pFrom").value;
+      period.to = $("pTo").value;
+      if (period.from && period.to && period.from > period.to) {
+        var swap = period.from; period.from = period.to; period.to = swap;
+        $("pFrom").value = period.from; $("pTo").value = period.to;
+      }
+      savePeriod();
+      applyPeriodUI();
+      renderAll();
+    });
+  });
+
+  $("search").addEventListener("input", renderGrid);
+  $("stockSearch").addEventListener("input", renderStock);
+  $("peopleSearch").addEventListener("input", renderPeople);
+
+  // Copy a customer's number from anywhere it is shown.
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("button[data-copy]");
+    if (!b) return;
+    copyNumber(b.dataset.copy, b);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeSheet();
+  });
+
+  /* ---------- Postgres data layer ---------- */
+
+  /* The UI speaks camelCase and thinks in collections; Postgres speaks
+     snake_case and thinks in tables. One translation layer here means none
+     of the screens above had to change. */
+  var TABLES = {
+    stock:       { base: "items",       read: "items_counter" },
+    sales:       { base: "sales",       read: "sales" },
+    jobs:        { base: "jobs",        read: "jobs" },
+    services:    { base: "services",    read: "services" },
+    customers:   { base: "customers",   read: "customers" },
+    deals:       { base: "deals",       read: "deals_counter" },
+    payments:    { base: "payments",    read: "payments" },
+    expenses:    { base: "expenses",    read: "expenses" },
+    tranches:    { base: "tranches",    read: "tranches" },
+    receivables: { base: "receivables", read: "receivables" }
+  };
+
+  var FIELDS = {
+    stock:       { order: "sort_order" },
+    sales:       { name: "item_name", itemId: "item_id", unitPrice: "unit_price",
+                   customerId: "customer_id", dueDate: "due_date" },
+    jobs:        { partsCost: "parts_cost", customerId: "customer_id",
+                   dueDate: "due_date" },
+    services:    { typicalCharge: "typical_charge", order: "sort_order" },
+    customers:   { phoneKey: "phone_key", firstSeen: "first_seen" },
+    deals:       { customerId: "customer_id", downPayment: "down_payment",
+                   startDate: "start_date" },
+    payments:    { refType: "ref_type", refId: "ref_id" },
+    expenses:    {},
+    tranches:    { dueDate: "due_date", order: "sort_order" },
+    receivables: { dueDate: "due_date", order: "sort_order" }
+  };
+
+  /* The screens use "" for "nothing filled in". Postgres will not take that
+     for a uuid, a date or a number, so each blank becomes what the column
+     actually means by empty. Getting this wrong fails the whole insert. */
+  var BLANK_IS_NULL = {
+    customer_id: 1, item_id: 1, recorded_by: 1, taken_by: 1,
+    due_date: 1, start_date: 1, first_seen: 1, phone_key: 1
+  };
+  var BLANK_IS_ZERO = {
+    qty: 1, cost: 1, price: 1, unit_price: 1, total: 1, received: 1,
+    charge: 1, parts_cost: 1, parts: 1, amount: 1, down_payment: 1,
+    instalment: 1, count: 1, typical_charge: 1, paid: 1, sort_order: 1
+  };
+
+  function toRow(kind, obj) {
+    var map = FIELDS[kind] || {};
+    var out = {};
+    for (var k in obj) {
+      if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+      if (k === "id") continue;
+      var col = map[k] || k.replace(/[A-Z]/g, function (c) { return "_" + c.toLowerCase(); });
+      var v = obj[k];
+      if (v === "" || v === undefined) {
+        if (BLANK_IS_NULL[col] || /_date$/.test(col)) v = null;
+        else if (BLANK_IS_ZERO[col]) v = 0;
+      } else if (BLANK_IS_ZERO[col]) {
+        var num = Number(v);
+        v = isFinite(num) ? num : 0;
+      }
+      out[col] = v;
+    }
+    return out;
+  }
+
+  function fromRow(kind, row) {
+    var map = FIELDS[kind] || {};
+    var back = {};
+    for (var key in map) back[map[key]] = key;
+    var out = {};
+    for (var col in row) {
+      if (!Object.prototype.hasOwnProperty.call(row, col)) continue;
+      var k = back[col] || col.replace(/_([a-z])/g, function (_, c) { return c.toUpperCase(); });
+      out[k] = row[col] === null ? "" : row[col];
+    }
+    out.id = row.id;
+    return out;
+  }
+
+  var sb = null;
+
+  function makeDb() {
+    function refFor(kind) {
+      var t = TABLES[kind];
+      return {
+        get: function () {
+          var table = (kind === "stock" || kind === "deals") && !isOwner ? t.read : t.base;
+          return sb.from(table).select("*").then(function (res) {
+            if (res.error) throw res.error;
+            return { docs: (res.data || []).map(function (row) {
+              var o = fromRow(kind, row);
+              return { id: row.id, exists: true, data: function () { return o; } };
+            }) };
+          });
+        },
+        /* Realtime needs per-table setup in Supabase, so the app refetches
+           after every write and polls quietly. Nothing depends on a socket. */
+        onSnapshot: function () { return function () {}; },
+        doc: function (id) {
+          return {
+            update: function (patch) {
+              return sb.from(t.base).update(toRow(kind, patch)).eq("id", id)
+                .then(function (r) { if (r.error) throw r.error; return refresh(kind); });
+            },
+            delete: function () {
+              return sb.from(t.base).delete().eq("id", id)
+                .then(function (r) { if (r.error) throw r.error; return refresh(kind); });
+            }
+          };
+        },
+        add: function (data) {
+          return sb.from(t.base).insert(toRow(kind, data)).select("id").single()
+            .then(function (r) {
+              if (r.error) throw r.error;
+              return refresh(kind).then(function () { return { id: r.data.id }; });
+            });
+        }
+      };
+    }
+    return { collection: refFor };
+  }
+
+  /* ---------- loading ---------- */
+
+  var problems = {};
+  function showProblems() {
+    var el = $("loadNote");
+    var names = Object.keys(problems);
+    if (!names.length) { el.hidden = true; el.innerHTML = ""; return; }
+    el.hidden = false;
+    el.innerHTML = '<div class="warn"><b>Could not load: ' +
+      esc(names.map(function (n) { return n + " (" + problems[n] + ")"; }).join(", ")) +
+      ".</b> Check your connection and reload.</div>";
+  }
+
+  function byOrder(a, b) {
+    return (Number(a.order) || 0) - (Number(b.order) || 0) ||
+           String(a.name).localeCompare(String(b.name));
+  }
+
+  var apply = {
+    stock: function (r) { stock = r.sort(byOrder); stockLoaded = true; },
+    sales: function (r) { sales = r; },
+    jobs: function (r) { jobs = r; },
+    services: function (r) { services = r.sort(byOrder); },
+    expenses: function (r) { expenses = r; },
+    tranches: function (r) { tranches = r; },
+    receivables: function (r) { receivables = r; },
+    payments: function (r) { payments = r; },
+    customers: function (r) {
+      customers = r.sort(function (a, b) {
+        return String(a.name).localeCompare(String(b.name));
+      });
+    },
+    deals: function (r) {
+      deals = r.sort(function (a, b) { return String(b.ts).localeCompare(String(a.ts)); });
+    }
+  };
+
+  /* The database would return nothing from the owner-only tables anyway, so
+     the counter does not waste a request on them. */
+  var ALL_KINDS = ["stock", "sales", "jobs", "services", "expenses", "tranches",
+                   "receivables", "payments", "customers", "deals"];
+  var OWNER_KINDS = { expenses: 1, tranches: 1, receivables: 1 };
+
+  function kindsForRole() {
+    return isOwner ? ALL_KINDS : ALL_KINDS.filter(function (k) {
+      return !OWNER_KINDS[k];
+    });
+  }
+
+  function refresh(kind) {
+    return db.collection(kind).get().then(function (snap) {
+      delete problems[kind];
+      apply[kind](snap.docs.map(function (d) { return d.data(); }));
+      showProblems();
+      renderAll();
+    }).catch(function (e) {
+      problems[kind] = (e && (e.code || e.message)) || "read failed";
+      if (kind === "stock") stockLoaded = true;
+      showProblems();
+      renderAll();
+    });
+  }
+
+  function refreshAll() {
+    return Promise.all(kindsForRole().map(refresh));
+  }
+
+  /* ---------- session ---------- */
+
+  function gateError(msg) {
+    $("g-flag").innerHTML = '<div class="flag">' + esc(msg) + "</div>";
+  }
+
+  function startApp(session) {
+    return sb.from("profiles").select("role, full_name").eq("id", session.user.id)
+      .single().then(function (res) {
+        var role = res.data && res.data.role;
+        isOwner = role === "owner";
+        canWrite = true;
+        var name = (res.data && res.data.full_name) || session.user.email;
+
+        $("gate").hidden = true;
+        $("appWrap").hidden = false;
+        $("signOut").hidden = false;
+        $("tabStock").hidden = !isOwner;
+        $("tabMoney").hidden = !isOwner;
+        // A hire purchase records what the phone cost, which is the owner's
+        // figure, and the deals table is closed to the counter. Hide the button
+        // rather than let it fail.
+        $("hpCta").hidden = !isOwner;
+        $("who").textContent = isOwner ? "Owner · " + name : "Attendant · " + name;
+        $("sellNote").textContent = isOwner
+          ? "Cost and profit show only to you. Change any item’s floor price on the Stock tab."
+          : "The price on each item is the lowest you may sell it for.";
+        $("csvBtn").hidden = false;
+
+        db = makeDb();
+        applyPeriodUI();
+        return refreshAll();
+      }).then(function () {
+        // A quiet poll keeps two devices roughly in step without any realtime setup.
+        setInterval(function () { if (!document.hidden) refreshAll(); }, 20000);
+      });
+  }
+
+  function showGate(msg) {
+    $("gate").hidden = false;
+    $("appWrap").hidden = true;
+    $("signOut").hidden = true;
+    if (msg) $("gateSub").textContent = msg;
+  }
+
+  $("loginForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var btn = $("g-submit");
+    btn.disabled = true; btn.textContent = "Signing in…";
+    $("g-flag").innerHTML = "";
+    sb.auth.signInWithPassword({
+      email: $("g-email").value.trim(),
+      password: $("g-pass").value
+    }).then(function (res) {
+      btn.disabled = false; btn.textContent = "Sign in";
+      if (res.error) {
+        gateError(res.error.message === "Invalid login credentials"
+          ? "That email and password do not match an account."
+          : res.error.message);
+        return;
+      }
+      return startApp(res.data.session);
+    }).catch(function (err) {
+      btn.disabled = false; btn.textContent = "Sign in";
+      gateError((err && err.message) || "Could not sign in. Check your connection.");
+    });
+  });
+
+  $("signOut").addEventListener("click", function () {
+    sb.auth.signOut().then(function () { location.reload(); });
+  });
+
+  /* ---------- start ---------- */
+
+  (function start() {
+    var cfg = window.SHOP_CONFIG || {};
+    if (!cfg.url || cfg.url.indexOf("YOUR_") === 0) {
+      showGate("Not configured yet — add your Supabase URL and key to this page.");
+      $("g-submit").disabled = true;
+      return;
+    }
+    sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+    sb.auth.getSession().then(function (res) {
+      var session = res.data && res.data.session;
+      if (session) return startApp(session);
+      showGate("Sign in to open the counter.");
+    }).catch(function () {
+      showGate("Could not reach the shop records. Check your connection.");
+    });
+  })();
+
+})();
+</script>

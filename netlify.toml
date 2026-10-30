@@ -1,0 +1,4 @@
+# Netlify: no build step, just serve the files as they are.
+[build]
+  publish = "."
+  command = ""
