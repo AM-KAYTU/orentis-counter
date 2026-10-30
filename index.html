@@ -557,11 +557,30 @@
   } catch (e) { /* a remembered filter is a convenience, not a requirement */ }
 
   function pad2(n) { return (n < 10 ? "0" : "") + n; }
-  function ymd(d) {
-    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+
+  /* A day means a day in the shop, not on whichever device is looking.
+     Ghana keeps UTC+0 all year, so the shop's midnight is UTC midnight and a
+     phone set to another timezone still sees the shop's day. Change this one
+     number if the shop ever keeps time somewhere else. */
+  var SHOP_OFFSET_MIN = 0;
+
+  function shopTime(d) {
+    return new Date(d.getTime() + SHOP_OFFSET_MIN * 60000);
   }
-  /* The local calendar day a record belongs to. Date-only strings are already
-     local days, so they are taken as written rather than parsed as UTC. */
+  function ymd(d) {
+    var t = shopTime(d);
+    return t.getUTCFullYear() + "-" + pad2(t.getUTCMonth() + 1) + "-" + pad2(t.getUTCDate());
+  }
+  /* Midnight in the shop, as an instant. */
+  function shopMidnight(y, m, day) {
+    return new Date(Date.UTC(y, m, day) - SHOP_OFFSET_MIN * 60000);
+  }
+  function shopTodayParts() {
+    var t = shopTime(new Date());
+    return { y: t.getUTCFullYear(), m: t.getUTCMonth(), d: t.getUTCDate() };
+  }
+  /* The shop day a record belongs to. Date-only strings are already days, so
+     they are taken as written rather than parsed and shifted. */
   function ymdOf(ts) {
     var str = String(ts || "");
     if (!str) return "";
@@ -571,14 +590,14 @@
   }
 
   function periodRange() {
-    var t = new Date(); t.setHours(0, 0, 0, 0);
+    var p = shopTodayParts();
+    var t = shopMidnight(p.y, p.m, p.d);
     if (period.mode === "today") return { from: ymd(t), to: ymd(t) };
     if (period.mode === "week") {
-      var w = new Date(t); w.setDate(w.getDate() - 6);
-      return { from: ymd(w), to: ymd(t) };
+      return { from: ymd(shopMidnight(p.y, p.m, p.d - 6)), to: ymd(t) };
     }
     if (period.mode === "month") {
-      return { from: ymd(new Date(t.getFullYear(), t.getMonth(), 1)), to: ymd(t) };
+      return { from: ymd(shopMidnight(p.y, p.m, 1)), to: ymd(t) };
     }
     if (period.mode === "custom") {
       return { from: period.from || "0000-01-01", to: period.to || "9999-12-31" };
@@ -607,15 +626,21 @@
   function dayKey(d) {
     var x = d ? new Date(d) : new Date();
     if (isNaN(x)) return "";
-    return x.getFullYear() + "-" + (x.getMonth() + 1) + "-" + x.getDate();
+    return ymd(x);
   }
+  var MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   function stampOf(iso) {
     var d = new Date(iso);
     if (isNaN(d)) return "";
-    var today = dayKey(iso) === dayKey();
-    return today
-      ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-      : d.toLocaleDateString([], { day: "numeric", month: "short" });
+    var t = shopTime(d);
+    if (dayKey(iso) !== dayKey()) {
+      return t.getUTCDate() + " " + MONTH_SHORT[t.getUTCMonth()];
+    }
+    var h = t.getUTCHours();
+    var suffix = h < 12 ? "am" : "pm";
+    var h12 = h % 12 === 0 ? 12 : h % 12;
+    return h12 + ":" + pad2(t.getUTCMinutes()) + " " + suffix;
   }
   function toast(msg) {
     var old = document.querySelector(".toast");
@@ -1180,7 +1205,6 @@
     m.netPosition = m.cash + m.stockAtCost + m.owedToYou - m.supplierDebt;
     m.builtUp = m.netPosition - m.openingCapital;
 
-    var today = new Date(); today.setHours(0, 0, 0, 0);
     m.lastTranche = "";
     tranches.forEach(function (t) {
       if (t.dueDate && t.dueDate > m.lastTranche) m.lastTranche = t.dueDate;
@@ -1776,17 +1800,19 @@
     }
     return db.collection("customers").add({
       name: name, phone: phone, phoneKey: key, note: "",
-      firstSeen: new Date().toISOString().slice(0, 10)
+      firstSeen: ymd(new Date())
     }).then(function (ref) { return (ref && ref.id) || ""; })
       .catch(function () { return ""; });
   }
 
   function daysSince(dateStr) {
     if (!dateStr) return null;
-    var d = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
+    var parts = String(dateStr).slice(0, 10).split("-");
+    if (parts.length !== 3) return null;
+    var d = shopMidnight(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     if (isNaN(d)) return null;
-    var today = new Date();
-    today.setHours(0, 0, 0, 0);
+    var p = shopTodayParts();
+    var today = shopMidnight(p.y, p.m, p.d);
     return Math.round((today - d) / 86400000);
   }
 
@@ -2681,9 +2707,9 @@
     if (!b) return;
     period.mode = b.dataset.period;
     if (period.mode === "custom") {
-      var t = new Date();
-      if (!period.from) period.from = ymd(new Date(t.getFullYear(), t.getMonth(), 1));
-      if (!period.to) period.to = ymd(t);
+      var p = shopTodayParts();
+      if (!period.from) period.from = ymd(shopMidnight(p.y, p.m, 1));
+      if (!period.to) period.to = ymd(shopMidnight(p.y, p.m, p.d));
     }
     savePeriod();
     applyPeriodUI();
