@@ -752,7 +752,8 @@
     parts:     { label: "Parts bought", cls: "out" },
     phone:     { label: "Phone bought for a deal", cls: "out" },
     expense:   { label: "Running cost", cls: "out" },
-    supplier:  { label: "Paid the supplier", cls: "out" }
+    supplier:  { label: "Paid the supplier", cls: "out" },
+    stock:     { label: "Stock bought", cls: "out" }
   };
 
   function costById() {
@@ -788,7 +789,9 @@
     sales.forEach(function (s) {
       var tot = num(s.total), rec = num(s.received);
       var onCredit = tot - rec > 0.5 || s.payment === "credit";
-      var cost = (costs[s.itemId] || 0) * num(s.qty);
+      // what these goods cost when they were sold, not what they cost now
+      var unit = num(s.unitCost) > 0 ? num(s.unitCost) : (costs[s.itemId] || 0);
+      var cost = unit * num(s.qty);
       rows.push({
         ts: s.ts, kind: onCredit ? "credit" : "sale",
         title: (s.name || "Goods") + " \u00d7 " + num(s.qty),
@@ -840,6 +843,15 @@
       var amt = num(p.amount);
       if (amt <= 0) return;
       var what = nameForRef(p.refType, p.refId);
+      if (p.refType === "stock") {
+        var it = stock.filter(function (x) { return x.id === p.refId; })[0];
+        rows.push({
+          ts: p.ts, kind: "stock", title: (it ? it.name : p.who) || "Stock",
+          who: "", value: 0, cost: 0, inAmt: 0, outAmt: amt, note: "",
+          ref: "stock", refId: p.refId
+        });
+        return;
+      }
       if (p.refType === "tranche") {
         rows.push({
           ts: p.ts, kind: "supplier", title: what || "The supplier",
@@ -1423,6 +1435,7 @@
         '<div class="sub num">' + leftFor(it) + " of " + (Number(it.qty) || 0) +
         " left · cost " + cedi(it.cost) + " · floor " + cedi(it.price) +
         (it.source ? " · " + esc(it.source) : "") + "</div></div>" +
+        '<button class="mini" data-restock="' + esc(it.id) + '">Restock</button>' +
         '<button class="mini" data-edit="' + esc(it.id) + '">Price</button>' +
         '<button class="mini" data-del="' + esc(it.id) + '">Remove</button></div>';
     }).join("");
@@ -1486,7 +1499,8 @@
 
     var legacyProfit = 0, tradeProfit = 0;
     sales.forEach(function (s) {
-      var g = num(s.total) - costById[s.itemId] * num(s.qty);
+      var unitCost = num(s.unitCost) > 0 ? num(s.unitCost) : costById[s.itemId];
+      var g = num(s.total) - unitCost * num(s.qty);
       if (srcById[s.itemId] === "Legacy stock") legacyProfit += g;
       else tradeProfit += g;
     });
@@ -2501,6 +2515,111 @@
     };
   }
 
+  /* Adding more of something already stocked.
+
+     The batch cost is asked for rather than assumed, because the supplier's
+     price moves. It is averaged across what is on hand, which is why each sale
+     now records the cost it was made at: without that, averaging would quietly
+     re-price every sale already in the books. */
+  function openRestock(item) {
+    closeSheet();
+    var onHand = leftFor(item);
+    var oldCost = num(item.cost);
+
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Add stock">' +
+        "<h3>Restock " + esc(item.name) + "</h3>" +
+        '<div class="floor"><span>On hand now</span><strong class="num">' + onHand + "</strong></div>" +
+        '<div class="field"><label for="r-qty">How many are you adding</label>' +
+          '<input id="r-qty" type="number" inputmode="numeric" min="1" step="1" value="1"></div>' +
+        '<div class="field"><label for="r-cost">What each one cost you this time (&#8373;)</label>' +
+          '<input id="r-cost" type="number" inputmode="numeric" min="0" step="1" value="' + oldCost + '">' +
+          '<p class="sub-note">Last time they cost ' + cedi(oldCost) +
+          " each. Change it if this batch was a different price.</p></div>" +
+        '<div class="field"><label>How you paid for it</label><div class="seg">' +
+          '<button type="button" id="r-credit" aria-pressed="true">Supplier credit</button>' +
+          '<button type="button" id="r-cash" aria-pressed="false">Cash now</button>' +
+        "</div></div>" +
+        '<div id="r-flag"></div>' +
+        '<div class="sheet-foot">' +
+          '<div id="r-split"></div>' +
+          '<div class="total"><span>This batch costs</span><strong class="num" id="r-total">\u20B50</strong></div>' +
+          '<div class="sheet-actions">' +
+            '<button class="act ghost" type="button" id="r-cancel">Cancel</button>' +
+            '<button class="act" type="button" id="r-save">Add to stock</button>' +
+          "</div></div></div>";
+    document.body.appendChild(scrim);
+    sheetEl = scrim;
+
+    var paid = "credit";
+    function addQty() { return Math.max(0, Math.floor(Number($("r-qty").value) || 0)); }
+    function batchCost() { return Math.max(0, Number($("r-cost").value) || 0); }
+    function newAverage() {
+      var units = onHand + addQty();
+      if (units <= 0) return batchCost();
+      return (onHand * oldCost + addQty() * batchCost()) / units;
+    }
+
+    function sync() {
+      var total = addQty() * batchCost();
+      $("r-total").textContent = cedi(total);
+      var avg = newAverage();
+      var bits = ["Stock becomes <b>" + (onHand + addQty()) + "</b>"];
+      if (Math.round(avg) !== Math.round(oldCost)) {
+        bits.push("average cost becomes <b>" + cedi(avg) + "</b> each");
+      }
+      $("r-split").innerHTML = '<div class="hint">' + bits.join(" · ") + "</div>";
+      $("r-flag").innerHTML = (batchCost() > num(item.price) && num(item.price) > 0)
+        ? '<div class="flag">This batch costs more than your floor price of ' +
+          cedi(item.price) + ". Raise the floor or you will sell at a loss.</div>"
+        : "";
+    }
+    function setPaid(v) {
+      paid = v;
+      $("r-credit").setAttribute("aria-pressed", v === "credit" ? "true" : "false");
+      $("r-cash").setAttribute("aria-pressed", v === "cash" ? "true" : "false");
+      sync();
+    }
+
+    $("r-qty").oninput = sync;
+    $("r-cost").oninput = sync;
+    $("r-credit").onclick = function () { setPaid("credit"); };
+    $("r-cash").onclick = function () { setPaid("cash"); };
+    $("r-cancel").onclick = closeSheet;
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(); });
+
+    $("r-save").onclick = function () {
+      var add = addQty();
+      if (add <= 0) {
+        $("r-flag").innerHTML = '<div class="flag">Put in how many you are adding.</div>';
+        return;
+      }
+      var btn = $("r-save");
+      btn.disabled = true; btn.textContent = "Saving\u2026";
+      var spent = add * batchCost();
+      db.collection("stock").doc(item.id).update({
+        qty: num(item.qty) + add,
+        cost: Math.round(newAverage() * 100) / 100
+      }).then(function () {
+        // paying cash for stock is money leaving; on credit nothing moves yet
+        if (paid === "cash" && spent > 0) {
+          return logPayment("stock", item.id, item.name, spent);
+        }
+      }).then(function () {
+        closeSheet();
+        toast(add + " \u00d7 " + item.name + " added");
+      }).catch(function (e) {
+        btn.disabled = false; btn.textContent = "Add to stock";
+        $("r-flag").innerHTML = '<div class="flag">' + esc(saveProblem(e, "restock")) + "</div>";
+      });
+    };
+
+    sync();
+    setTimeout(function () { $("r-qty").focus(); $("r-qty").select(); }, 30);
+  }
+
   function openPrice(item) {
     closeSheet();
     var scrim = document.createElement("div");
@@ -2646,6 +2765,12 @@
   });
 
   $("stockList").addEventListener("click", function (e) {
+    var rs = e.target.closest("button[data-restock]");
+    if (rs) {
+      var ri = stock.filter(function (x) { return x.id === rs.dataset.restock; })[0];
+      if (ri) openRestock(ri);
+      return;
+    }
     var ed = e.target.closest("button[data-edit]");
     if (ed) {
       var it = stock.filter(function (x) { return x.id === ed.dataset.edit; })[0];
@@ -3123,7 +3248,7 @@
      of the screens above had to change. */
   var TABLES = {
     stock:       { base: "items",       read: "items_counter" },
-    sales:       { base: "sales",       read: "sales" },
+    sales:       { base: "sales",       read: "sales_counter" },
     jobs:        { base: "jobs",        read: "jobs" },
     services:    { base: "services",    read: "services" },
     customers:   { base: "customers",   read: "customers" },
@@ -3137,7 +3262,8 @@
   var FIELDS = {
     stock:       { order: "sort_order" },
     sales:       { name: "item_name", itemId: "item_id", unitPrice: "unit_price",
-                   customerId: "customer_id", dueDate: "due_date" },
+                   unitCost: "unit_cost", customerId: "customer_id",
+                   dueDate: "due_date" },
     jobs:        { partsCost: "parts_cost", customerId: "customer_id",
                    dueDate: "due_date" },
     services:    { typicalCharge: "typical_charge", order: "sort_order" },
@@ -3172,7 +3298,7 @@
      does not send a time and lets the server stamp it. Nothing an attendant's
      phone believes can move a sale to the wrong day again. */
   var SERVER_STAMPS = {
-    sales:     ["ts"],
+    sales:     ["ts", "unit_cost"],
     jobs:      ["ts"],
     deals:     ["ts"],
     payments:  ["ts"],
@@ -3268,7 +3394,7 @@
       var t = TABLES[kind];
       return {
         get: function () {
-          var table = (kind === "stock" || kind === "deals") && !isOwner ? t.read : t.base;
+          var table = (!isOwner && t.read !== t.base) ? t.read : t.base;
           return withRenewal(function () {
             return sb.from(table).select("*");
           }).then(function (res) {

@@ -100,8 +100,12 @@ create table public.sales (
   received     numeric not null default 0 check (received >= 0),
   due_date     date,
   recorded_by  uuid references auth.users(id),
+  unit_cost    numeric not null default 0,   -- owner only; stamped on insert
   constraint sales_received_within_total check (received <= total)
 );
+comment on column public.sales.unit_cost is
+  'What the goods cost when this sale was made. Without it, restocking at a '
+  'new price would silently re-price every sale already in the books.';
 
 create table public.jobs (
   id           uuid primary key default gen_random_uuid(),
@@ -145,7 +149,8 @@ comment on table public.deals is
 create table public.payments (
   id         uuid primary key default gen_random_uuid(),
   ts         timestamptz not null default now(),
-  ref_type   text not null check (ref_type in ('sale','job','deal','tranche','receivable')),
+  ref_type   text not null
+             check (ref_type in ('sale','job','deal','tranche','receivable','stock')),
   ref_id     text not null,
   who        text not null default '',
   amount     numeric not null check (amount > 0),
@@ -282,6 +287,12 @@ create view public.items_counter
   select id, name, qty, price, source, sort_order
   from public.items;
 
+create view public.sales_counter
+  with (security_invoker = off) as
+  select id, ts, item_id, item_name, qty, unit_price, total, payment,
+         customer_id, buyer, phone, received, due_date, recorded_by
+  from public.sales;
+
 create view public.deals_counter
   with (security_invoker = off) as
   select id, ts, device, customer_id, buyer, phone,
@@ -290,8 +301,29 @@ create view public.deals_counter
 
 revoke all on public.items_counter from anon, authenticated;
 revoke all on public.deals_counter from anon, authenticated;
+revoke all on public.sales_counter from anon, authenticated;
 grant select on public.items_counter to authenticated;
 grant select on public.deals_counter to authenticated;
+grant select on public.sales_counter to authenticated;
+
+-- The sales table itself stays readable, minus the one column that is a cost.
+revoke select (unit_cost) on public.sales from authenticated;
+
+-- A sale is stamped with what the goods cost at that moment. It happens here
+-- because the counter is not allowed to read a cost to send one.
+create or replace function public.stamp_sale_cost()
+  returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.unit_cost is null or new.unit_cost = 0 then
+    new.unit_cost := coalesce((select cost from public.items where id = new.item_id), 0);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists sales_stamp_cost on public.sales;
+create trigger sales_stamp_cost before insert on public.sales
+  for each row execute function public.stamp_sale_cost();
 
 -- --------------------------------------------- money-recording functions
 -- An attendant must be able to take a hire-purchase instalment without being
