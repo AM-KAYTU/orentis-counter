@@ -3226,13 +3226,52 @@
 
   var sb = null;
 
+  /* A sign-in lasts about an hour. A shop laptop that sleeps overnight wakes
+     with a dead token, so the first thing it does every morning is ask for
+     stock with expired credentials, get a 401, and show an empty shop. The
+     library renews tokens on a timer, which a sleeping machine does not run.
+
+     So any call that fails on authentication renews the session once and tries
+     again, rather than leaving the counter staring at nothing. */
+  function looksExpired(err) {
+    if (!err) return false;
+    var code = String(err.code || "");
+    var msg = String(err.message || "").toLowerCase();
+    return code === "PGRST301" || code === "401" ||
+           msg.indexOf("jwt") !== -1 || msg.indexOf("expired") !== -1 ||
+           msg.indexOf("invalid claim") !== -1 || msg.indexOf("not authenticated") !== -1;
+  }
+
+  var renewing = null;
+  function renewSession() {
+    // one renewal at a time, however many reads failed together
+    if (!renewing) {
+      renewing = sb.auth.refreshSession()
+        .then(function (r) { return !(r && r.error); })
+        .catch(function () { return false; })
+        .then(function (ok) { renewing = null; return ok; });
+    }
+    return renewing;
+  }
+
+  function withRenewal(run) {
+    return run().then(function (res) {
+      if (!res || !res.error || !looksExpired(res.error)) return res;
+      return renewSession().then(function (ok) {
+        return ok ? run() : res;
+      });
+    });
+  }
+
   function makeDb() {
     function refFor(kind) {
       var t = TABLES[kind];
       return {
         get: function () {
           var table = (kind === "stock" || kind === "deals") && !isOwner ? t.read : t.base;
-          return sb.from(table).select("*").then(function (res) {
+          return withRenewal(function () {
+            return sb.from(table).select("*");
+          }).then(function (res) {
             if (res.error) throw res.error;
             return { docs: (res.data || []).map(function (row) {
               var o = fromRow(kind, row);
@@ -3246,19 +3285,22 @@
         doc: function (id) {
           return {
             update: function (patch) {
-              return sb.from(t.base).update(toRow(kind, patch)).eq("id", id)
-                .then(function (r) { if (r.error) throw r.error; return refresh(kind); });
+              return withRenewal(function () {
+                return sb.from(t.base).update(toRow(kind, patch)).eq("id", id);
+              }).then(function (r) { if (r.error) throw r.error; return refresh(kind); });
             },
             delete: function () {
-              return sb.from(t.base).delete().eq("id", id)
-                .then(function (r) { if (r.error) throw r.error; return refresh(kind); });
+              return withRenewal(function () {
+                return sb.from(t.base).delete().eq("id", id);
+              }).then(function (r) { if (r.error) throw r.error; return refresh(kind); });
             }
           };
         },
         add: function (data) {
-          return sb.from(t.base).insert(serverStamped(kind, toRow(kind, data)))
-            .select("id").single()
-            .then(function (r) {
+          return withRenewal(function () {
+            return sb.from(t.base).insert(serverStamped(kind, toRow(kind, data)))
+              .select("id").single();
+          }).then(function (r) {
               if (r.error) throw r.error;
               return refresh(kind).then(function () { return { id: r.data.id }; });
             });
@@ -3278,7 +3320,12 @@
     el.hidden = false;
     el.innerHTML = '<div class="warn"><b>Could not load: ' +
       esc(names.map(function (n) { return n + " (" + problems[n] + ")"; }).join(", ")) +
-      ".</b> Check your connection and reload.</div>";
+      '.</b> <button class="mini" id="retryLoad" type="button">Try again</button></div>';
+    var btn = $("retryLoad");
+    if (btn) btn.addEventListener("click", function () {
+      btn.disabled = true; btn.textContent = "Loading\u2026";
+      renewSession().then(refreshAll);
+    });
   }
 
   function byOrder(a, b) {
@@ -3396,6 +3443,13 @@
       }).then(function () {
         // A quiet poll keeps two devices roughly in step without any realtime setup.
         setInterval(function () { if (!document.hidden) refreshAll(); }, 20000);
+
+        /* A sleeping laptop runs no timers. When the shop opens the page again
+           the first thing it should do is fetch, not wait out the poll. */
+        document.addEventListener("visibilitychange", function () {
+          if (!document.hidden) refreshAll();
+        });
+        window.addEventListener("online", function () { refreshAll(); });
       });
   }
 
